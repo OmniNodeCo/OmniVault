@@ -57,10 +57,34 @@ encrypted backup (Settings → Export) to move data between devices.
 - **Release** (`release.yml`) — push a `v*` tag and a GitHub Release is
   published with the local-vault APK and SHA-256 checksums. With keystore
   secrets configured the APK is signed; otherwise it is built unsigned.
+  Manual run: Actions → *Release* → Run workflow with a tag name — if the
+  tag does not exist yet it is created from the commit you run it on.
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
+
+## In-app updates (auto-update)
+
+The app checks for updates itself — no Play Store needed:
+
+- On launch (at most once every 24 h) it fetches the repo's GitHub
+  **Releases → latest** JSON and compares the version with the installed one.
+- If a newer release with an `.apk` asset exists, a dialog offers to
+  **download the update** via the system Download Manager; tapping the
+  completed notification installs it over the existing app (vault data is
+  kept, provided the APK is signed with the same key).
+- **Menu → Check for updates** triggers the check manually.
+- The update source defaults to this repository's releases and can be
+  changed or disabled at build time:
+
+```bash
+gradle -p android assembleDebug -PupdateUrl=https://api.github.com/repos/YOU/YOURFORK/releases/latest
+gradle -p android assembleDebug -PupdateUrl=   # disable update checks entirely
+```
+
+- The check contacts only `api.github.com` (or your override) — the vault
+  itself stays fully offline and on-device.
 
 ## Release signing
 
@@ -94,6 +118,8 @@ Never commit keystores or passwords (`.gitignore` already excludes `*.keystore`)
   `10.0.2.2`/`localhost` cleartext for emulator debugging).
 - Handles the WebView file chooser (image uploads), back navigation, state
   restore on rotation, and an offline screen with retry (server mode only).
+- Checks GitHub Releases for newer APKs (daily + on demand) and downloads
+  them with the system Download Manager — zero dependencies.
 
 ## Requirements
 

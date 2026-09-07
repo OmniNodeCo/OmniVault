@@ -2,11 +2,20 @@ package co.omninode.omnivault;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
@@ -18,10 +27,19 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 
 /**
@@ -36,6 +54,11 @@ import java.util.Collections;
  *
  * Optionally build with -PvaultUrl=https://your-server to make the same APK
  * open a self-hosted OmniVault server instead (sync mode).
+ *
+ * In-app updates: the app checks the GitHub Releases "latest" endpoint (see
+ * the updateUrl property in build.gradle) once a day and on demand from the
+ * menu; newer APKs are downloaded with the system Download Manager. Disable
+ * at build time with -PupdateUrl= (empty).
  */
 public class MainActivity extends Activity {
 
@@ -45,6 +68,12 @@ public class MainActivity extends Activity {
     /** Placeholder https origin for serving bundled assets (offline only). */
     private static final String ASSETS_ORIGIN = "https://appassets.androidplatform.net";
     private static final String LOCAL_START_URL = ASSETS_ORIGIN + "/index.html";
+
+    /** Update checks: at most once a day automatically, plus manual via menu. */
+    private static final long UPDATE_CHECK_INTERVAL_MS = 24L * 60 * 60 * 1000;
+    private static final String PREFS_NAME = "omnivault";
+    private static final String PREF_LAST_UPDATE_CHECK = "last_update_check";
+    private static final int MENU_CHECK_UPDATES = 1;
 
     private WebView webView;
     private ProgressBar progress;
@@ -148,6 +177,8 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
 
+        maybeCheckForUpdates();
+
         if (savedInstanceState != null) {
             String restored = savedInstanceState.getString(STATE_URL);
             if (restored != null) {
@@ -211,6 +242,164 @@ public class MainActivity extends Activity {
         return "application/octet-stream";
     }
 
+    // -------------------------------------------------------------- updates
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        menu.add(0, MENU_CHECK_UPDATES, 0, "Check for updates");
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == MENU_CHECK_UPDATES) {
+            checkForUpdates(true);
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    /** Automatic daily check; silently does nothing when disabled/stale. */
+    private void maybeCheckForUpdates() {
+        if (BuildConfig.UPDATE_URL.isEmpty()) return;
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        long last = prefs.getLong(PREF_LAST_UPDATE_CHECK, 0);
+        if (now - last < UPDATE_CHECK_INTERVAL_MS) return;
+        checkForUpdates(false);
+    }
+
+    /** Fetches the latest-release JSON and compares it with this build. */
+    private void checkForUpdates(boolean manual) {
+        final String updateUrl = BuildConfig.UPDATE_URL;
+        if (updateUrl.isEmpty()) {
+            if (manual) toast("Update checks are disabled in this build");
+            return;
+        }
+        final Handler ui = new Handler(Looper.getMainLooper());
+        new Thread(() -> {
+            String tag = null, apkUrl = null, pageUrl = null, error = null;
+            try {
+                JSONObject release = new JSONObject(httpGet(updateUrl));
+                tag = release.optString("tag_name", "");
+                pageUrl = release.optString("html_url", "");
+                JSONArray assets = release.optJSONArray("assets");
+                if (assets != null) {
+                    for (int i = 0; i < assets.length(); i++) {
+                        JSONObject asset = assets.getJSONObject(i);
+                        if (asset.optString("name", "").endsWith(".apk")) {
+                            apkUrl = asset.optString("browser_download_url", "");
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            }
+            final String fTag = tag, fApk = apkUrl, fPage = pageUrl, fError = error;
+            ui.post(() -> {
+                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                        .putLong(PREF_LAST_UPDATE_CHECK, System.currentTimeMillis())
+                        .apply();
+                if (fError != null) {
+                    if (manual) toast("Update check failed: " + fError);
+                    return;
+                }
+                String remote = fTag != null && fTag.startsWith("v") ? fTag.substring(1) : fTag;
+                if (remote == null || remote.isEmpty()
+                        || compareVersions(remote, BuildConfig.VERSION_NAME) <= 0) {
+                    if (manual) toast("OmniVault " + BuildConfig.VERSION_NAME + " is up to date");
+                    return;
+                }
+                offerUpdate(fTag, fApk == null || fApk.isEmpty() ? null : fApk, fPage);
+            });
+        }, "omnivault-update-check").start();
+    }
+
+    /** "Update available" dialog: download the APK or open the release page. */
+    private void offerUpdate(String tag, String apkUrl, String pageUrl) {
+        String message = "OmniVault " + tag + " is available. "
+                + (apkUrl != null ? "Download it now?" : "Open the release page to get it?");
+        new AlertDialog.Builder(this)
+                .setTitle("Update available")
+                .setMessage(message)
+                .setPositiveButton(apkUrl != null ? "Download" : "Open", (dialog, which) -> {
+                    if (apkUrl != null) downloadUpdate(tag, apkUrl);
+                    else openInBrowser(pageUrl);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** Hands the APK to the system Download Manager (visible notification). */
+    private void downloadUpdate(String tag, String apkUrl) {
+        try {
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(apkUrl));
+            request.setTitle("OmniVault " + tag);
+            request.setDescription("Update APK");
+            request.setMimeType("application/vnd.android.package-archive");
+            request.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalPublicDir(
+                    Environment.DIRECTORY_DOWNLOADS, "OmniVault-" + tag + ".apk");
+            DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            manager.enqueue(request);
+            toast("Downloading OmniVault " + tag + " — tap the notification to install");
+        } catch (Exception e) {
+            toast("Could not start the download — opening the release page instead");
+            openInBrowser("https://github.com/OmniNodeCo/OmniVault/releases/latest");
+        }
+    }
+
+    private void openInBrowser(String url) {
+        if (url == null || url.isEmpty()) return;
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (ActivityNotFoundException ignored) {
+            toast("No browser available");
+        }
+    }
+
+    private static String httpGet(String urlStr) throws IOException {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(urlStr).openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(10000);
+            connection.setRequestProperty("Accept", "application/vnd.github+json");
+            connection.setRequestProperty("User-Agent", "OmniVault-Android");
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
+            StringBuilder body = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) body.append(line);
+            reader.close();
+            return body.toString();
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    /** Numeric dotted-version compare ("1.10.0" > "1.9.2"); ignores non-numerics. */
+    private static int compareVersions(String a, String b) {
+        String[] x = a.replaceAll("[^0-9.]", "").split("\\.");
+        String[] y = b.replaceAll("[^0-9.]", "").split("\\.");
+        int len = Math.max(x.length, y.length);
+        for (int i = 0; i < len; i++) {
+            int xi = i < x.length && !x[i].isEmpty() ? Integer.parseInt(x[i]) : 0;
+            int yi = i < y.length && !y[i].isEmpty() ? Integer.parseInt(y[i]) : 0;
+            if (xi != yi) return Integer.compare(xi, yi);
+        }
+        return 0;
+    }
+
+    private void toast(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
     // ------------------------------------------------------------------ misc
 
     @Override
@@ -224,8 +413,8 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (pendingFileCallback != null) {
-                Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-                pendingFileCallback.onReceiveValue(result);
+                pendingFileCallback.onReceiveValue(
+                        WebChromeClient.FileChooserParams.parseResult(resultCode, data));
                 pendingFileCallback = null;
             }
             return;

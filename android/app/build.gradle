@@ -8,6 +8,13 @@ plugins {
 //   gradle assembleDebug -PvaultUrl=https://vault.example.com
 def vaultUrl = (project.findProperty('vaultUrl') ?: '').toString().trim()
 
+// In-app update source: the app checks this GitHub Releases "latest" JSON
+// once a day (and on demand from its menu) and offers to download newer APKs
+// with the system Download Manager. Override with -PupdateUrl=<json-url> or
+// disable update checks entirely with -PupdateUrl= (empty).
+def updateUrl = (project.findProperty('updateUrl')
+        ?: 'https://api.github.com/repos/OmniNodeCo/OmniVault/releases/latest').toString().trim()
+
 android {
     namespace 'co.omninode.omnivault'
     compileSdk 34
@@ -19,6 +26,7 @@ android {
         versionCode 1
         versionName '1.0.0'
         buildConfigField 'String', 'VAULT_URL', "\"${vaultUrl}\""
+        buildConfigField 'String', 'UPDATE_URL', "\"${updateUrl}\""
     }
 
     buildFeatures {
