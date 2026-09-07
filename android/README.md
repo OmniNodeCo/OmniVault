@@ -1,51 +1,71 @@
-# OmniVault — Android wrapper
+# OmniVault — Android app
 
-A zero-dependency native shell (plain `android.app.Activity` + `WebView`) that
-packages the OmniVault PWA as a real APK. All encryption still happens inside
-the web app via WebCrypto — this wrapper just provides the app-like frame:
-its own icon, no browser UI, back-button navigation, and the system file
-chooser for encrypted image uploads.
+A **standalone local vault** APK. The entire web app (the repo's `public/`
+folder) is bundled into the APK at build time and served from app-private
+storage on a secure `https://appassets.androidplatform.net` origin — so the
+vault runs 100% on-device:
 
-For most people the **PWA route is enough**: open the vault in Chrome on
-Android → menu → **Install app**. Same experience, no APK, auto-updates.
-Use this project when you want a sideloadable/distributable APK instead.
+- **no server, no URL, no configuration** — build it and it works
+- encryption (WebCrypto) and storage (IndexedDB) need a secure context, which
+  the intercepted https origin provides
+- zero network requests are ever made — the vault never leaves the phone
+- all encryption/decryption, recovery codes and backups behave exactly like
+  the web app (same code)
+
+Want it connected to your own server instead? Build with
+`-PvaultUrl=https://vault.example.com` and the same APK opens your server
+(sync mode). You can also just install the PWA from Chrome — no APK needed.
 
 ## Build
 
 Requirements: JDK 17, Android SDK (platform 34), Gradle 8.7+.
 
 ```bash
-# Point the app at your vault server (default: https://vault.example.com)
+# Standalone local vault (default — no URL needed):
+gradle -p android assembleDebug
+# → android/app/build/outputs/apk/debug/app-debug.apk
+
+# Optional: server-connected build instead:
 gradle -p android assembleDebug -PvaultUrl=https://vault.example.com
 
-# Output:
-# android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-For local development against a server on your machine, the emulator can use
-cleartext to `10.0.2.2` (allowed by `network_security_config.xml`):
-
-```bash
+# For emulator testing against a local server:
 gradle -p android assembleDebug -PvaultUrl=http://10.0.2.2:3000
 ```
 
-### GitHub Actions (recommended)
+## How the local APK works
 
-No local toolchain needed — the repo ships two workflows:
+1. The `copyWebApp` Gradle task copies the repo's `public/` into
+   `app/src/main/assets/` before every build (generated — gitignored, always
+   in sync with the web app).
+2. `MainActivity` intercepts **every** WebView request and serves it from
+   those bundled assets. The page origin is
+   `https://appassets.androidplatform.net` — an offline placeholder that is
+   never resolved on the network.
+3. The web app probes `/api/health`, gets no server, and automatically runs
+   in **local mode**: users, wrapped vault keys and encrypted items live in
+   the app's private IndexedDB.
 
-- **Build APK** (`build.yml`) — runs automatically on changes to `android/**`,
-  or manually: Actions → *Build APK* → Run workflow → set `vault_url` (and
-  optionally choose a release build) → download the `OmniVault-debug-apk` /
-  `OmniVault-release-apk` artifact.
+Uninstalling the app permanently deletes the vault — use the in-app
+encrypted backup (Settings → Export) to move data between devices.
+
+## GitHub Actions (no configuration needed)
+
+- **Build APK** (`build.yml`) — runs automatically on changes to
+  `android/**` or `public/**`, or manually (Actions → *Build APK* → Run
+  workflow → optionally pick a release build). Download the
+  `OmniVault-debug-apk` / `OmniVault-release-unsigned-apk` artifact.
 - **Release** (`release.yml`) — push a `v*` tag and a GitHub Release is
-  published with the release APK and SHA-256 checksums. If keystore secrets
-  are configured the APK is signed; otherwise it is built unsigned.
+  published with the local-vault APK and SHA-256 checksums. With keystore
+  secrets configured the APK is signed; otherwise it is built unsigned.
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
 
 ## Release signing
 
-Debug APKs are for testing. `android/app/build.gradle` already supports
-env-based signing — the Release workflow picks it up automatically from these
-**repository secrets**:
+`android/app/build.gradle` supports env-based signing — the Release workflow
+picks it up automatically from these **repository secrets**:
 
 | Secret | Value |
 | --- | --- |
@@ -53,7 +73,6 @@ env-based signing — the Release workflow picks it up automatically from these
 | `OMNIVAULT_KEYSTORE_PASSWORD` | keystore password |
 | `OMNIVAULT_KEY_ALIAS` | key alias |
 | `OMNIVAULT_KEY_PASSWORD` | key password |
-| `VAULT_URL` | server URL baked into the APK |
 
 Generate a keystore with:
 
@@ -66,14 +85,15 @@ Never commit keystores or passwords (`.gitignore` already excludes `*.keystore`)
 
 ## What the wrapper does
 
-- Loads `BuildConfig.VAULT_URL` (set via the `vaultUrl` Gradle property).
+- Bundles and serves the web app offline (local vault by default), or loads
+  `BuildConfig.VAULT_URL` when built with `-PvaultUrl=…`.
 - Keeps vault URLs in the app; external links open in the browser.
-- Enables DOM storage — the web app keeps the derived key in `sessionStorage`,
-  so closing the app locks the vault.
+- Enables DOM storage — the vault key lives in `sessionStorage`, so closing
+  the app locks the vault; auto-lock also applies.
 - Blocks mixed content and file/content URL access; HTTPS only (except
-  `10.0.2.2`/`localhost` for emulator debugging).
+  `10.0.2.2`/`localhost` cleartext for emulator debugging).
 - Handles the WebView file chooser (image uploads), back navigation, state
-  restore on rotation, and an offline screen with retry.
+  restore on rotation, and an offline screen with retry (server mode only).
 
 ## Requirements
 

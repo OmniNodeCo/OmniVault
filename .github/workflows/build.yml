@@ -1,27 +1,26 @@
 name: Build APK
 
-# Builds the native OmniVault Android wrapper (a thin WebView shell around
-# the PWA). Runs on every change to android/**, and manually on demand.
+# Builds the OmniVault Android app — a STANDALONE LOCAL VAULT.
 #
-# For most users the PWA alone is enough (Chrome → "Install app"); this
-# workflow produces a real APK you can sideload or distribute.
+# The web app (public/) is bundled into the APK at build time, so no server
+# and no URL are needed: the vault runs entirely on-device (WebCrypto +
+# IndexedDB) with zero configuration. Runs automatically on changes to
+# android/** or public/**, or manually on demand.
 
 on:
   push:
     branches: [main]
     paths:
       - 'android/**'
+      - 'public/**'
       - '.github/workflows/build.yml'
   pull_request:
     paths:
       - 'android/**'
+      - 'public/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
     inputs:
-      vault_url:
-        description: 'Vault server URL the app opens (e.g. https://vault.example.com)'
-        required: false
-        default: 'https://vault.example.com'
       build_type:
         description: 'Which APK to build'
         required: false
@@ -34,7 +33,7 @@ permissions:
 
 jobs:
   apk:
-    name: Build Android APK
+    name: Build local-vault APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,15 +56,11 @@ jobs:
 
       - name: Build debug APK
         if: inputs.build_type != 'release'
-        env:
-          VAULT_URL: ${{ inputs.vault_url || secrets.VAULT_URL || 'https://vault.example.com' }}
-        run: gradle -p android assembleDebug --no-daemon -PvaultUrl="$VAULT_URL"
+        run: gradle -p android assembleDebug --no-daemon
 
-      - name: Build release APK
+      - name: Build release APK (unsigned)
         if: inputs.build_type == 'release'
-        env:
-          VAULT_URL: ${{ inputs.vault_url || secrets.VAULT_URL || 'https://vault.example.com' }}
-        run: gradle -p android assembleRelease --no-daemon -PvaultUrl="$VAULT_URL"
+        run: gradle -p android assembleRelease --no-daemon
 
       - name: Upload debug APK
         if: inputs.build_type != 'release'
@@ -79,6 +74,6 @@ jobs:
         if: inputs.build_type == 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: OmniVault-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          name: OmniVault-release-unsigned-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error

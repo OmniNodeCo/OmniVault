@@ -190,6 +190,9 @@
 
     registerServiceWorker() {
       if (!('serviceWorker' in navigator)) return;
+      // The bundled Android APK serves the app from local assets — a service
+      // worker adds nothing there and its install can churn, so skip it.
+      if (location.hostname === 'appassets.androidplatform.net') return;
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {
           /* insecure context or unsupported — app still works */

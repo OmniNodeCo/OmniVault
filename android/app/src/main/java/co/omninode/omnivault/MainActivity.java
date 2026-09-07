@@ -13,31 +13,43 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Collections;
+
 /**
- * OmniVault Android wrapper.
+ * OmniVault Android app.
  *
- * A deliberately thin, dependency-free WebView shell around the OmniVault
- * PWA. All encryption still happens inside the web app (WebCrypto in the
- * WebView), so this activity only needs to:
- *   - load the configured vault URL,
- *   - keep vault URLs inside the app and send external links to the browser,
- *   - support the image upload file chooser,
- *   - handle back navigation and state restoration,
- *   - show a friendly offline screen.
+ * By default this is a STANDALONE LOCAL VAULT: the entire web app (the
+ * repo's public/ folder) is bundled into the APK assets at build time and
+ * served here on the secure https://appassets.androidplatform.net origin —
+ * a placeholder origin that is intercepted locally and never reaches the
+ * network. WebCrypto and IndexedDB work, the vault lives entirely in the
+ * app's private storage, and no server or URL configuration is needed.
+ *
+ * Optionally build with -PvaultUrl=https://your-server to make the same APK
+ * open a self-hosted OmniVault server instead (sync mode).
  */
 public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final String STATE_URL = "omnivault.url";
 
+    /** Placeholder https origin for serving bundled assets (offline only). */
+    private static final String ASSETS_ORIGIN = "https://appassets.androidplatform.net";
+    private static final String LOCAL_START_URL = ASSETS_ORIGIN + "/index.html";
+
     private WebView webView;
     private ProgressBar progress;
     private ValueCallback<Uri[]> pendingFileCallback;
+    private boolean localVault;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -48,13 +60,14 @@ public class MainActivity extends Activity {
         webView = findViewById(R.id.webview);
         progress = findViewById(R.id.progress);
 
-        final Uri vaultUri = Uri.parse(BuildConfig.VAULT_URL);
+        localVault = configuredUrl().isEmpty();
+        final Uri startUri = Uri.parse(startUrl());
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
-        // DOM storage (sessionStorage) is how the web app keeps the vault
-        // unlocked for the session and locks it when the app closes.
+        // DOM storage (IndexedDB + sessionStorage) is where the local vault lives.
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setSupportZoom(false);
@@ -64,12 +77,22 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                // Local-vault mode: every request is served from bundled APK
+                // assets — nothing ever leaves the device.
+                if (localVault) {
+                    return serveAsset(request.getUrl().getPath());
+                }
+                return null;
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
                 if (scheme.equals("http") || scheme.equals("https")) {
-                    // The vault itself stays in the app; anything else goes to the browser.
-                    return !sameOrigin(vaultUri, uri);
+                    // The vault stays in the app; anything else goes to the browser.
+                    return !sameOrigin(startUri, uri);
                 }
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, uri)); // mailto:, tel:, …
@@ -91,7 +114,8 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) {
+                // Only relevant in server mode; local assets always load.
+                if (!localVault && request.isForMainFrame()) {
                     showOfflinePage();
                 }
             }
@@ -132,8 +156,62 @@ public class MainActivity extends Activity {
                 return;
             }
         }
-        webView.loadUrl(BuildConfig.VAULT_URL);
+        webView.loadUrl(startUrl());
     }
+
+    // ------------------------------------------------------------- local app
+
+    private static String configuredUrl() {
+        return BuildConfig.VAULT_URL == null ? "" : BuildConfig.VAULT_URL.trim();
+    }
+
+    private static String startUrl() {
+        String configured = configuredUrl();
+        return configured.isEmpty() ? LOCAL_START_URL : configured;
+    }
+
+    /**
+     * Serve a file from the bundled assets. Called on a background thread —
+     * only touches the thread-safe AssetManager, never the UI.
+     */
+    private WebResourceResponse serveAsset(String path) {
+        if (path == null) path = "/";
+        if (path.isEmpty() || "/".equals(path)) path = "/index.html";
+        if (path.contains("..")) return notFound(); // no traversal
+        String rel = path.startsWith("/") ? path.substring(1) : path;
+        try {
+            InputStream input = getAssets().open(rel);
+            return new WebResourceResponse(mimeFor(rel), "utf-8", input);
+        } catch (IOException e) {
+            return notFound();
+        }
+    }
+
+    private static WebResourceResponse notFound() {
+        return new WebResourceResponse(
+                "text/plain", "utf-8", 404, "Not Found",
+                Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
+    }
+
+    private static String mimeFor(String path) {
+        String p = path.toLowerCase();
+        if (p.endsWith(".html")) return "text/html";
+        if (p.endsWith(".css")) return "text/css";
+        if (p.endsWith(".js")) return "application/javascript";
+        if (p.endsWith(".json") || p.endsWith(".webmanifest")) return "application/json";
+        if (p.endsWith(".svg")) return "image/svg+xml";
+        if (p.endsWith(".png")) return "image/png";
+        if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
+        if (p.endsWith(".gif")) return "image/gif";
+        if (p.endsWith(".webp")) return "image/webp";
+        if (p.endsWith(".ico")) return "image/x-icon";
+        if (p.endsWith(".txt")) return "text/plain";
+        if (p.endsWith(".woff")) return "font/woff";
+        if (p.endsWith(".woff2")) return "font/woff2";
+        return "application/octet-stream";
+    }
+
+    // ------------------------------------------------------------------ misc
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
@@ -145,9 +223,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILE_CHOOSER_REQUEST) {
-            Uri[] result = null;
             if (pendingFileCallback != null) {
-                result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
                 pendingFileCallback.onReceiveValue(result);
                 pendingFileCallback = null;
             }
@@ -203,9 +280,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Stand-in page when the vault server is unreachable. */
+    /** Stand-in page for server mode when the vault server is unreachable. */
     private void showOfflinePage() {
-        String url = BuildConfig.VAULT_URL;
+        String url = startUrl();
         String html =
                 "<html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
                 "<style>body{background:#0B1020;color:#E6EAF4;font-family:system-ui,sans-serif;" +

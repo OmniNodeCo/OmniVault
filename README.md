@@ -30,8 +30,9 @@ and an encrypted backup format.
 - 🎲 **Password generator** — unbiased (rejection-sampled) crypto randomness
 - 💾 **Encrypted backups** — portable JSON export/import with their own password
 - ⏱️ **Auto-lock** — configurable inactivity lock + clipboard auto-clear
-- 📱 **Android** — installable PWA (offline app shell) *and* a native APK
-  with `build.yml` / `release.yml` CI pipelines
+- 📱 **Android** — installable PWA (offline app shell) *and* a standalone
+  local-vault APK that bundles the whole app (no server, no URL) with
+  `build.yml` / `release.yml` CI pipelines
 - 🐳 **Docker** — one-command self-hosting, plus GHCR image publishing
 - 🧪 **Tested** — RFC-vector crypto tests, API tests, end-to-end and
   local-mode simulations of the real client
@@ -96,25 +97,29 @@ keep backups.
 menu → **Install app**. It gets its own icon, fullscreen window, offline app
 shell, and home-screen shortcuts (Passwords / Notes / Images).
 
-**Option 2 — native APK:** the repo contains a zero-dependency WebView wrapper
-(`android/`). Build it yourself:
+**Option 2 — native APK (standalone local vault):** the repo contains a
+zero-dependency WebView wrapper (`android/`) that **bundles the whole web
+app into the APK** — a fully offline, on-device vault with **no server and
+no URL configuration**:
 
 ```bash
-gradle -p android assembleDebug -PvaultUrl=https://vault.example.com
+gradle -p android assembleDebug
 # → android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Or let CI do it:
-- **Build APK workflow** — Actions → *Build APK* → Run workflow → set your
-  vault URL → download the APK artifact (runs automatically on changes to
-  `android/**` too).
-- **Release workflow** — push a `v*` tag and a GitHub Release is published
-  with a (optionally signed, via repo secrets) release APK + checksums:
+Or let CI do it (nothing to configure):
+- **Build APK workflow** (`build.yml`) — runs automatically on changes to
+  `android/**` / `public/**`, or manually; downloads the APK artifact.
+- **Release workflow** (`release.yml`) — push a `v*` tag and a GitHub Release
+  is published with the (optionally signed, via repo secrets) local-vault
+  APK + SHA-256 checksums:
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
+Want the APK connected to your server instead? Build with
+`gradle assembleDebug -PvaultUrl=https://vault.example.com`.
 See [`android/README.md`](android/README.md).
 
 ## How the encryption works

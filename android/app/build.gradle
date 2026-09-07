@@ -2,9 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
-// The vault server this APK opens. Override at build time:
+// By default the APK is a STANDALONE LOCAL VAULT: the web app (repo public/)
+// is bundled into the APK and served offline — no server, no URL needed.
+// Optionally build against a self-hosted server instead:
 //   gradle assembleDebug -PvaultUrl=https://vault.example.com
-def vaultUrl = (project.findProperty('vaultUrl') ?: 'https://vault.example.com').toString()
+def vaultUrl = (project.findProperty('vaultUrl') ?: '').toString().trim()
 
 android {
     namespace 'co.omninode.omnivault'
@@ -51,6 +53,19 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+// Bundle the web app (repo public/) into the APK so the app works fully
+// offline as a local vault. assets/ is generated — never commit it.
+task cleanWebApp(type: Delete) {
+    delete file(new File(projectDir, 'src/main/assets'))
+}
+
+task copyWebApp(type: Copy, dependsOn: 'cleanWebApp') {
+    from new File(projectDir, '../../public')
+    into new File(projectDir, 'src/main/assets')
+}
+
+preBuild.dependsOn 'copyWebApp'
 
 // Intentionally empty: the wrapper uses zero third-party dependencies.
 dependencies {

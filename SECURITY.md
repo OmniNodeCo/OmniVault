@@ -45,7 +45,10 @@ When no server is reachable, the app stores the same zero-knowledge records
 (KDF salts, hashed verifiers, wrapped vault-key envelopes, AES-GCM item
 envelopes) in **IndexedDB** in the browser. No plaintext is ever stored, and
 the code paths are identical to server mode (covered by the test-suite via a
-memory adapter). Trade-offs:
+memory adapter). The Android APK uses this mode too: the web app is bundled
+in the APK and served offline from an intercepted secure origin
+(`appassets.androidplatform.net`) — the app makes zero network requests and
+the vault lives in the app's private web storage. Trade-offs:
 
 - Data lives in one browser profile. Clearing site data (or browser reset)
   deletes the vault — the app requests `navigator.storage.persist()` to
