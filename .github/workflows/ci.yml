@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Zero npm dependencies — no install step needed.
+      - name: Syntax-check all JavaScript
+        run: npm run check
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Smoke-test the server binary
+        env:
+          PORT: "3123"
+          OMNIVAULT_DATA_DIR: /tmp/omnivault-smoke
+        run: |
+          node server/server.js &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:3123/api/health && break
+            sleep 0.5
+          done
+          curl -sf http://127.0.0.1:3123/ | grep -q OmniVault
+          curl -sf http://127.0.0.1:3123/manifest.webmanifest > /dev/null
+          kill $SERVER_PID

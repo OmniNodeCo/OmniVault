@@ -1,0 +1,6 @@
+// OmniVault Android wrapper — root build file.
+// The app itself is the OmniVault PWA; this project packages it as an APK.
+
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

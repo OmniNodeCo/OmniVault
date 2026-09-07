@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  # GitHub Actions workflow versions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'ci:'
+
+  # Dockerfile base image bumps
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'docker:'
+
+  # Android Gradle dependencies (android/app/build.gradle)
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'android:'

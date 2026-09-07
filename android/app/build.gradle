@@ -1,0 +1,57 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The vault server this APK opens. Override at build time:
+//   gradle assembleDebug -PvaultUrl=https://vault.example.com
+def vaultUrl = (project.findProperty('vaultUrl') ?: 'https://vault.example.com').toString()
+
+android {
+    namespace 'co.omninode.omnivault'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'co.omninode.omnivault'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'VAULT_URL', "\"${vaultUrl}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    // Optional release signing via environment variables (used by CI):
+    //   OMNIVAULT_KEYSTORE_PATH, OMNIVAULT_KEYSTORE_PASSWORD,
+    //   OMNIVAULT_KEY_ALIAS, OMNIVAULT_KEY_PASSWORD
+    signingConfigs {
+        if (System.env.OMNIVAULT_KEYSTORE_PATH) {
+            release {
+                storeFile file(System.env.OMNIVAULT_KEYSTORE_PATH)
+                storePassword System.env.OMNIVAULT_KEYSTORE_PASSWORD
+                keyAlias System.env.OMNIVAULT_KEY_ALIAS
+                keyPassword System.env.OMNIVAULT_KEY_PASSWORD
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.env.OMNIVAULT_KEYSTORE_PATH) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// Intentionally empty: the wrapper uses zero third-party dependencies.
+dependencies {
+}

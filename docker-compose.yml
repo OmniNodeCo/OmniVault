@@ -1,0 +1,43 @@
+# OmniVault — self-hosted encrypted vault (passwords / notes / images).
+#
+#   docker compose up -d
+#
+# The container stores all vault data (already end-to-end encrypted by the
+# browser) in the named volume `omnivault-data`. Back up that volume, or use
+# the in-app "Export backup" button for a portable encrypted JSON file.
+#
+# Access over plain HTTP on localhost works fine. For remote/LAN access over
+# HTTPS put your favourite reverse proxy (Caddy/Traefik/nginx) in front — the
+# browser needs a secure context for WebCrypto and PWA install.
+
+services:
+  omnivault:
+    build: .
+    # Prefer the prebuilt image from GitHub Container Registry instead:
+    # image: ghcr.io/omninodeco/omnivault:latest
+    container_name: omnivault
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      # How long a login session stays valid (hours). Default: 168 (7 days).
+      SESSION_TTL_HOURS: "168"
+      # Max size of encrypted upload bodies in MB (images travel as encrypted
+      # base64, so leave headroom above the 15 MB per-image client limit).
+      MAX_BODY_MB: "32"
+      # OMNIVAULT_DATA_DIR defaults to /data inside the image.
+      # OMNIVAULT_TLS_CERT: /certs/fullchain.pem   # optional native TLS
+      # OMNIVAULT_TLS_KEY: /certs/privkey.pem
+    volumes:
+      - omnivault-data:/data
+      # - ./certs:/certs:ro                        # mount certs if using native TLS
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  omnivault-data:

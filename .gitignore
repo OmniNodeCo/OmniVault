@@ -1,0 +1,28 @@
+# Dependencies (none — but just in case)
+node_modules/
+
+# Vault user data — never commit secrets or ciphertext blobs
+data/
+*.json.tmp
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Test / coverage
+coverage/
+.nyc_output/

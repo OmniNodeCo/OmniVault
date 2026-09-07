@@ -1,0 +1,103 @@
+name: Release
+
+# Publishes a GitHub Release with the Android APK whenever a v* tag is pushed:
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# Optional repo secrets:
+#   VAULT_URL                  – server URL baked into the APK
+#   OMNIVAULT_KEYSTORE_B64     – base64 of a release keystore (signed APK)
+#   OMNIVAULT_KEYSTORE_PASSWORD, OMNIVAULT_KEY_ALIAS, OMNIVAULT_KEY_PASSWORD
+#
+# Without keystore secrets the APK is built unsigned (still installable after
+# signing yourself, e.g. with apksigner). The release also gets SHA-256
+# checksums for every artifact.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Release Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Install Android SDK pieces (if missing)
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null
+
+      - name: Decode signing keystore (if provided)
+        env:
+          KEYSTORE_B64: ${{ secrets.OMNIVAULT_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$HOME/omnivault-release.keystore"
+            echo "OMNIVAULT_KEYSTORE_PATH=$HOME/omnivault-release.keystore" >> "$GITHUB_ENV"
+            echo "Keystore decoded — release will be signed."
+          else
+            echo "No keystore secret — release will be unsigned."
+          fi
+
+      - name: Build release APK
+        env:
+          VAULT_URL: ${{ secrets.VAULT_URL || 'https://vault.example.com' }}
+          OMNIVAULT_KEYSTORE_PASSWORD: ${{ secrets.OMNIVAULT_KEYSTORE_PASSWORD }}
+          OMNIVAULT_KEY_ALIAS: ${{ secrets.OMNIVAULT_KEY_ALIAS }}
+          OMNIVAULT_KEY_PASSWORD: ${{ secrets.OMNIVAULT_KEY_PASSWORD }}
+        run: gradle -p android assembleRelease --no-daemon -PvaultUrl="$VAULT_URL"
+
+      - name: Collect artifacts and checksums
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p apk
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then echo "No APK produced"; exit 1; fi
+          cp "$APK" "apk/OmniVault-${TAG}.apk"
+          if [ -n "$OMNIVAULT_KEYSTORE_PATH" ]; then
+            echo "signed" > apk/signature.txt
+          else
+            echo "unsigned (add keystore secrets to sign releases)" > apk/signature.txt
+          fi
+          cd apk && sha256sum * > checksums.txt && cat checksums.txt
+
+      - name: Create GitHub Release and upload APK
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="OmniVault ${TAG}
+          **Android APK** — a WebView wrapper around the OmniVault PWA, configured for \`${{ secrets.VAULT_URL || 'https://vault.example.com' }}\`.
+
+          - Install the PWA directly from Chrome if you prefer (no APK needed).
+          - See the README for server deployment (Docker or Node) and the recovery-code flow.
+          - SHA-256 checksums are in \`checksums.txt\`; signature status in \`signature.txt\`."
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" apk/* --clobber
+          else
+            gh release create "$TAG" --title "OmniVault $TAG" --notes "$NOTES" --verify-tag apk/*
+          fi

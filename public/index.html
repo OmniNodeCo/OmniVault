@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OmniVault — Encrypted Vault</title>
+  <meta name="description" content="OmniVault — a zero-knowledge encrypted vault for your passwords, notes and images. Works on the web and installs as an app on Android.">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b1020">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/icons/icon.svg">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OmniVault">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="offline-banner" class="offline-banner" hidden>
+    <span id="offline-banner-icon"></span>
+    <span>Offline — showing cached app. Vault changes need a connection.</span>
+  </div>
+
+  <header id="topbar" class="topbar" hidden>
+    <div class="topbar-row">
+      <div class="brand" id="brand">
+        <span class="brand-logo" id="brand-logo"></span>
+        <span class="brand-name">OmniVault</span>
+      </div>
+      <div class="topbar-actions">
+        <button id="btn-install" class="btn btn-ghost btn-sm" hidden>Install app</button>
+        <button id="btn-settings" class="icon-btn" type="button" title="Settings" aria-label="Settings"></button>
+        <button id="btn-lock" class="icon-btn" type="button" title="Lock vault" aria-label="Lock vault"></button>
+      </div>
+    </div>
+    <div class="topbar-row topbar-controls">
+      <div class="tabs" id="tabs" role="tablist" aria-label="Vault sections">
+        <button class="tab" type="button" role="tab" data-filter="password">Passwords <span class="tab-count" data-count="password"></span></button>
+        <button class="tab" type="button" role="tab" data-filter="note">Notes <span class="tab-count" data-count="note"></span></button>
+        <button class="tab" type="button" role="tab" data-filter="image">Images <span class="tab-count" data-count="image"></span></button>
+      </div>
+      <div class="toolbar">
+        <div class="search-wrap" id="search-wrap">
+          <span id="search-icon"></span>
+          <input id="search" type="search" placeholder="Search vault…" autocomplete="off" spellcheck="false" aria-label="Search vault">
+        </div>
+        <button id="btn-add" class="btn btn-primary" type="button">Add</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="view" class="view" aria-live="polite"></main>
+
+  <footer id="footnote" class="footnote" hidden>
+    <span class="footnote-lock" id="footnote-lock-icon"></span>
+    <span>End-to-end encrypted in your browser — only ciphertext is ever stored.</span>
+    <span id="mode-chip" class="mode-chip"></span>
+  </footer>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="assertive"></div>
+
+  <script src="/js/crypto.js"></script>
+  <script src="/js/localstore.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/views.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
