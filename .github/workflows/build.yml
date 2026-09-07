@@ -6,6 +6,11 @@ name: Build APK
 # and no URL are needed: the vault runs entirely on-device (WebCrypto +
 # IndexedDB) with zero configuration. Runs automatically on changes to
 # android/** or public/**, or manually on demand.
+#
+# Debug APKs are auto-signed with the standard debug keystore. Release APKs
+# are signed with the repo release keystore when the OMNIVAULT_KEYSTORE_*
+# secrets are set, otherwise with a generated CI test key (installable, but
+# unique per run — set the secrets for upgrade-in-place builds).
 
 on:
   push:
@@ -71,11 +76,48 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" >/dev/null
 
+      - name: Set up signing keystore (repo secret, or generated CI test key)
+        if: inputs.build_type == 'release'
+        env:
+          KEYSTORE_B64: ${{ secrets.OMNIVAULT_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.OMNIVAULT_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.OMNIVAULT_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.OMNIVAULT_KEY_PASSWORD }}
+        run: |
+          set -e
+          KS="$HOME/omnivault-release.keystore"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$KS"
+            {
+              echo "OMNIVAULT_KEYSTORE_PATH=$KS"
+              echo "OMNIVAULT_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "OMNIVAULT_KEY_ALIAS=$KEY_ALIAS"
+              echo "OMNIVAULT_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Signing with the repository release keystore."
+          else
+            # No secrets configured — generate a test key so the APK is
+            # still installable (unsigned APKs fail with "App not
+            # installed"). Unique per run; do not use for upgrade installs.
+            keytool -genkeypair -v \
+              -keystore "$KS" -storetype PKCS12 \
+              -storepass omnivault-ci -keypass omnivault-ci \
+              -alias omnivault -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=OmniVault CI, O=OmniNodeCo, C=US"
+            {
+              echo "OMNIVAULT_KEYSTORE_PATH=$KS"
+              echo "OMNIVAULT_KEYSTORE_PASSWORD=omnivault-ci"
+              echo "OMNIVAULT_KEY_ALIAS=omnivault"
+              echo "OMNIVAULT_KEY_PASSWORD=omnivault-ci"
+            } >> "$GITHUB_ENV"
+            echo "No keystore secret — signing with a generated CI test key."
+          fi
+
       - name: Build debug APK
         if: inputs.build_type != 'release'
         run: gradle -p android assembleDebug --no-daemon
 
-      - name: Build release APK (unsigned)
+      - name: Build release APK (signed)
         if: inputs.build_type == 'release'
         run: gradle -p android assembleRelease --no-daemon
 
@@ -91,6 +133,8 @@ jobs:
         if: inputs.build_type == 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: OmniVault-release-unsigned-apk
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: OmniVault-release-apk
+          # app-release.apk = the signed build; if signing were skipped the
+          # file would be app-release-unsigned.apk and this step fails.
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

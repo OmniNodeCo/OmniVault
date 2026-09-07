@@ -88,8 +88,13 @@ gradle -p android assembleDebug -PupdateUrl=   # disable update checks entirely
 
 ## Release signing
 
-`android/app/build.gradle` supports env-based signing — the Release workflow
-picks it up automatically from these **repository secrets**:
+Every built APK is signed — Android refuses to install unsigned APKs with
+an "App not installed" error.
+
+- **Debug builds** are auto-signed with the standard debug keystore.
+- **Release builds** are signed with your release keystore when these
+  **repository secrets** are set, otherwise with a keystore generated on
+  the fly (CI test key):
 
 | Secret | Value |
 | --- | --- |
@@ -104,6 +109,13 @@ Generate a keystore with:
 keytool -genkey -v -keystore release.keystore -alias omnivault \
   -keyalg RSA -keysize 2048 -validity 10000
 ```
+
+**Set the secrets** if you keep the app installed: a CI test key is unique
+to each run, so a newer CI-signed build **cannot install over** an older one
+— Android requires an uninstall first, which deletes the local vault
+(export it first!). With a stable release keystore, updates install in
+place and in-app auto-updates work. `signature.txt` in each release states
+which key was used.
 
 Never commit keystores or passwords (`.gitignore` already excludes `*.keystore`).
 

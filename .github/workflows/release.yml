@@ -9,12 +9,17 @@ name: Release
 # the branch you want to release). If the tag does not exist yet it is
 # created from the commit the workflow runs on.
 # No server URL is needed — the app bundles the web app and keeps the vault
-# in on-device storage. Optional repo secrets for a SIGNED release APK:
-#   OMNIVAULT_KEYSTORE_B64      (base64 of a release keystore)
-#   OMNIVAULT_KEYSTORE_PASSWORD, OMNIVAULT_KEY_ALIAS, OMNIVAULT_KEY_PASSWORD
-# Without keystore secrets the APK is unsigned (installable after signing
-# yourself, e.g. with apksigner). SHA-256 checksums are attached to the
-# release for every artifact.
+# in on-device storage. Release APKs are ALWAYS signed (Android refuses to
+# install unsigned APKs — that yields "App not installed"):
+#   - with the repo release keystore when these secrets are set:
+#       OMNIVAULT_KEYSTORE_B64      (base64 of a release keystore)
+#       OMNIVAULT_KEYSTORE_PASSWORD, OMNIVAULT_KEY_ALIAS, OMNIVAULT_KEY_PASSWORD
+#     A stable key lets new builds install over older ones (in-app updates
+#     work) — recommended.
+#   - otherwise with a keystore generated on the fly (CI test key, unique
+#     per run — installing over a differently-signed build requires an
+#     uninstall first: export the vault first!).
+# SHA-256 checksums are attached to every release.
 
 on:
   push:
@@ -87,23 +92,46 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" >/dev/null
 
-      - name: Decode signing keystore (if provided)
+      - name: Set up signing keystore (repo secret, or generated CI test key)
         env:
           KEYSTORE_B64: ${{ secrets.OMNIVAULT_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.OMNIVAULT_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.OMNIVAULT_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.OMNIVAULT_KEY_PASSWORD }}
         run: |
+          set -e
+          KS="$HOME/omnivault-release.keystore"
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$HOME/omnivault-release.keystore"
-            echo "OMNIVAULT_KEYSTORE_PATH=$HOME/omnivault-release.keystore" >> "$GITHUB_ENV"
-            echo "Keystore decoded — release will be signed."
+            echo "$KEYSTORE_B64" | base64 -d > "$KS"
+            {
+              echo "OMNIVAULT_KEYSTORE_PATH=$KS"
+              echo "OMNIVAULT_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "OMNIVAULT_KEY_ALIAS=$KEY_ALIAS"
+              echo "OMNIVAULT_KEY_PASSWORD=$KEY_PASSWORD"
+              echo "SIGNING_MODE=release keystore"
+            } >> "$GITHUB_ENV"
+            echo "Signing with the repository release keystore."
           else
-            echo "No keystore secret — release will be unsigned."
+            # No secrets configured — generate a test key so the APK is
+            # still installable. The key is unique to this run: installing
+            # over a differently-signed build requires an uninstall first
+            # (export the vault before updating!).
+            keytool -genkeypair -v \
+              -keystore "$KS" -storetype PKCS12 \
+              -storepass omnivault-ci -keypass omnivault-ci \
+              -alias omnivault -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=OmniVault CI, O=OmniNodeCo, C=US"
+            {
+              echo "OMNIVAULT_KEYSTORE_PATH=$KS"
+              echo "OMNIVAULT_KEYSTORE_PASSWORD=omnivault-ci"
+              echo "OMNIVAULT_KEY_ALIAS=omnivault"
+              echo "OMNIVAULT_KEY_PASSWORD=omnivault-ci"
+              echo "SIGNING_MODE=CI test key (unique to this run)"
+            } >> "$GITHUB_ENV"
+            echo "No keystore secret — signing with a generated CI test key."
           fi
 
-      - name: Build release APK
-        env:
-          OMNIVAULT_KEYSTORE_PASSWORD: ${{ secrets.OMNIVAULT_KEYSTORE_PASSWORD }}
-          OMNIVAULT_KEY_ALIAS: ${{ secrets.OMNIVAULT_KEY_ALIAS }}
-          OMNIVAULT_KEY_PASSWORD: ${{ secrets.OMNIVAULT_KEY_PASSWORD }}
+      - name: Build release APK (signed)
         run: gradle -p android assembleRelease --no-daemon
 
       - name: Collect artifacts and checksums
@@ -114,11 +142,7 @@ jobs:
           APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
           if [ -z "$APK" ]; then echo "No APK produced"; exit 1; fi
           cp "$APK" "apk/OmniVault-${TAG}.apk"
-          if [ -n "$OMNIVAULT_KEYSTORE_PATH" ]; then
-            echo "signed" > apk/signature.txt
-          else
-            echo "unsigned (add keystore secrets to sign releases)" > apk/signature.txt
-          fi
+          echo "signed ($SIGNING_MODE)" > apk/signature.txt
           cd apk && sha256sum * > checksums.txt && cat checksums.txt
 
       - name: Create GitHub Release and upload APK
@@ -134,7 +158,8 @@ jobs:
           - The app checks for newer releases automatically (menu → Check for updates) and downloads updates from this page.
           - Forgot-password resets use the one-time recovery code shown at signup.
           - Prefer syncing across devices? Run the server (Docker or Node) and install the PWA instead.
-          - SHA-256 checksums are in \`checksums.txt\`; signature status in \`signature.txt\`."
+          - SHA-256 checksums are in \`checksums.txt\`; signature status in \`signature.txt\`.
+          - If the APK is signed with a CI test key, that key is unique to this build: export your vault (Settings → Export) before installing a differently-signed build over it. Set the OMNIVAULT_KEYSTORE_* repository secrets for stable, upgrade-in-place releases."
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" apk/* --clobber
           else
