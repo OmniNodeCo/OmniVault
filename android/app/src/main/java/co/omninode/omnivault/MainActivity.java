@@ -108,8 +108,13 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 // Local-vault mode: every request is served from bundled APK
-                // assets — nothing ever leaves the device.
+                // assets — nothing ever leaves the device, except the GitHub
+                // Releases API used by Settings → "Check for updates".
                 if (localVault) {
+                    String host = request.getUrl().getHost();
+                    if ("api.github.com".equalsIgnoreCase(host)) {
+                        return null; // pass through to the network
+                    }
                     return serveAsset(request.getUrl().getPath());
                 }
                 return null;

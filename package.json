@@ -1,6 +1,6 @@
 {
   "name": "omnivault",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Zero-knowledge encrypted vault for passwords, notes and images. Web + Android (PWA), Docker-ready, zero npm dependencies.",
   "main": "server/server.js",
   "private": true,

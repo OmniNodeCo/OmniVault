@@ -30,6 +30,11 @@
     MAX_IMAGE_BYTES: 15 * 1024 * 1024,
     CLIPBOARD_CLEAR_MS: 25000,
 
+    /** Web-app version — shown in Settings and compared with GitHub Releases. */
+    APP_VERSION: '1.0.2',
+    /** Latest-release JSON used by "Check for updates" (Settings). */
+    UPDATE_URL: 'https://api.github.com/repos/OmniNodeCo/OmniVault/releases/latest',
+
     state: {
       view: 'auth', // auth | lock | vault
       mode: 'server', // server | local
@@ -158,6 +163,46 @@
       chip.textContent =
         this.state.mode === 'local' ? 'On this device' : `Server · ${location.host || 'remote'}`;
       chip.classList.toggle('local', this.state.mode === 'local');
+    },
+
+    // ============================================================== updates
+
+    /**
+     * Compare the running version with the latest GitHub release. Contacts
+     * ONLY api.github.com (never the vault server) and only when asked.
+     */
+    async checkForUpdates() {
+      let release;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        const res = await fetch(this.UPDATE_URL, {
+          signal: ctrl.signal,
+          cache: 'no-store',
+          headers: { Accept: 'application/vnd.github+json' }
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`GitHub returned HTTP ${res.status}`);
+        release = await res.json();
+      } catch (e) {
+        toast('Could not check for updates — are you online?', 'error', 3200);
+        return;
+      }
+      const tag = String((release && release.tag_name) || '');
+      const latest = tag.startsWith('v') ? tag.slice(1) : tag;
+      if (!latest) {
+        toast('Could not read the latest release', 'error');
+        return;
+      }
+      if (compareVersions(latest, this.APP_VERSION) <= 0) {
+        toast(`OmniVault v${this.APP_VERSION} is up to date`, 'success', 3000);
+        return;
+      }
+      Views().openUpdateModal({
+        current: this.APP_VERSION,
+        latest: tag,
+        url: String((release && release.html_url) || 'https://github.com/OmniNodeCo/OmniVault/releases/latest')
+      });
     },
 
     loadSettings() {
@@ -424,6 +469,7 @@
           }
           const vaultKeyBytes = await VC.decryptBytes(material.masterKey, res.user.vault);
           await this.establishSession(res, vaultKeyBytes);
+          await this.loadItems();
           this.show('vault');
           toast('Vault unlocked', 'success', 1800);
         }
@@ -485,7 +531,7 @@
       const vaultKeyBytes = await VC.decryptBytes(rec.recoveryKey, res.recovery.envelope);
 
       const newSalt = VC.randomSaltB64();
-      const next = await VC.deriveAuthMaterial(newPassword, newPassword ? undefined : undefined, newSalt);
+      const next = await VC.deriveAuthMaterial(newPassword, newSalt);
       const vaultEnv = await VC.encryptBytes(next.masterKey, vaultKeyBytes);
       await this.api.updateAuth({ salt: newSalt, authKey: next.authKey, vault: vaultEnv });
 
@@ -913,6 +959,19 @@
       }, 10000);
     }
   };
+
+  /** Numeric dotted-version compare ("1.10.0" > "1.9.2"), ignoring prefixes. */
+  function compareVersions(a, b) {
+    const pa = String(a).replace(/[^0-9.]/g, '').split('.');
+    const pb = String(b).replace(/[^0-9.]/g, '').split('.');
+    const n = Math.max(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+      const x = parseInt(pa[i], 10) || 0;
+      const y = parseInt(pb[i], 10) || 0;
+      if (x !== y) return x > y ? 1 : -1;
+    }
+    return 0;
+  }
 
   global.App = App;
   App.init();

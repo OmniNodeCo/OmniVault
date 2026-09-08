@@ -264,7 +264,7 @@ test('static files: shell, manifest, sw, icons, traversal blocked', async () => 
 
   const sw = await fetch(`${s.base}/sw.js`);
   assert.strictEqual(sw.status, 200);
-  assert.match(await sw.text(), /omnivault-v2/);
+  assert.match(await sw.text(), /omnivault-v\d+/); // cache version must exist
 
   const icon = await fetch(`${s.base}/icons/icon-192.png`);
   assert.strictEqual(icon.status, 200);

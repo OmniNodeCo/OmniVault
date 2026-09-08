@@ -23,7 +23,7 @@ function setSecurityHeaders(res) {
       "script-src 'self'",
       "style-src 'self'",
       "img-src 'self' blob: data:",
-      "connect-src 'self'",
+      "connect-src 'self' https://api.github.com",
       "font-src 'self'",
       "manifest-src 'self'",
       "object-src 'none'",

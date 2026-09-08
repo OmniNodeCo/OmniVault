@@ -140,6 +140,7 @@
 
   function renderLock(container, opts) {
     clear(container);
+    const app = opts.app;
     const card = el('div', { class: 'auth-card' });
 
     const password = el('input', { type: 'password', id: 'lock-password', autocomplete: 'current-password', placeholder: 'Master password', autofocus: true });
@@ -151,6 +152,8 @@
       errorText.textContent = msg;
       errorBox.hidden = !msg;
     };
+    // Surface unlock errors (and app.init()'s offline notice) in this box.
+    app._lockError = showErr;
 
     const form = el('form', { novalidate: true }, [
       errorBox,
@@ -318,24 +321,39 @@
   function imageCard(app, item) {
     const thumb = el('img', { class: 'thumb', alt: item.title || 'encrypted image', loading: 'lazy' });
     thumb.dataset.thumbId = item.id;
+    // Head row is just icon + title (like other cards); the full-width
+    // thumbnail is inserted above it so the title is always readable.
     const c = cardShell(
       item,
       [
-        thumb,
-        el('div', { class: 'card-head', style: { marginTop: '4px' } }, [
-          el('div', { class: 'card-icon image', html: icon('image', 18) }),
-          titleBlock(item, el('span', { text: `${fmtBytes(item.plain.size)} · ${fmtDate(item.updatedAt)}` }))
-        ])
+        el('div', { class: 'card-icon image', html: icon('image', 18) }),
+        titleBlock(item, el('span', { text: `${fmtBytes(item.plain.size)} · ${fmtDate(item.updatedAt)}` }))
       ],
       () => app.openImageView(item)
     );
+    c.insertBefore(thumb, c.firstChild);
     c.appendChild(
       el('div', { class: 'card-actions' }, [
         chipBtn('View', 'eye', () => app.openImageView(item)),
-        chipBtn('Save', 'download', () => app.downloadImage(item))
+        chipBtn('Save', 'download', () => app.downloadImage(item)),
+        chipBtn('Edit', 'edit', () => app.openItemModal(item)),
+        chipBtn('Delete', 'trash', () => confirmAndDelete(app, item))
       ])
     );
     return c;
+  }
+
+  /** "Delete item?" confirmation shared by cards and the item modal. */
+  async function confirmAndDelete(app, item, modalToClose) {
+    const sure = await confirmModal({
+      title: 'Delete item?',
+      message: `“${item.title || 'Untitled'}” will be permanently removed from your vault.`,
+      confirmLabel: 'Delete',
+      danger: true
+    });
+    if (!sure) return;
+    await app.deleteItem(item);
+    if (modalToClose) modalToClose.close();
   }
 
   // ------------------------------------------------------------ TOTP widget
@@ -533,15 +551,7 @@
                 left: true,
                 closeOnClick: false,
                 onClick: async () => {
-                  const sure = await confirmModal({
-                    title: 'Delete item?',
-                    message: `“${existing.title}” will be permanently removed from your vault.`,
-                    confirmLabel: 'Delete',
-                    danger: true
-                  });
-                  if (!sure) return false;
-                  await app.deleteItem(existing);
-                  m.close();
+                  await confirmAndDelete(app, existing, m);
                   return false;
                 }
               }
@@ -594,7 +604,7 @@
   // ======================================================== IMAGE VIEWER
 
   function openImageView(app, item) {
-    const img = el('img', { alt: item.title || 'encrypted image' });
+    const img = el('img', { class: 'image-view', alt: item.title || 'encrypted image' });
     openModal({
       title: item.title || 'Image',
       wide: true,
@@ -1012,9 +1022,23 @@
                 el('button', { class: 'btn btn-ghost btn-sm', type: 'button', html: icon('logout', 15) + '<span>Log out</span>', onclick: () => app.logout() })
               ])
             ]),
+            el('div', { class: 'settings-row' }, [
+              el('div', { class: 'label' }, [
+                el('span', { text: 'Check for updates' }),
+                el('small', { text: `You have v${app.APP_VERSION} — checks GitHub Releases` })
+              ]),
+              el('div', { class: 'control' }, [
+                el('button', {
+                  class: 'btn btn-soft btn-sm',
+                  type: 'button',
+                  html: icon('refresh', 15) + '<span>Check now</span>',
+                  onclick: () => app.checkForUpdates()
+                })
+              ])
+            ]),
             el('p', {
               class: 'small muted',
-              text: `OmniVault · AES-256-GCM · PBKDF2-SHA256 ×${global.VaultCrypto.PBKDF2_ITERATIONS.toLocaleString()} · zero-knowledge`
+              text: `OmniVault v${app.APP_VERSION} · AES-256-GCM · PBKDF2-SHA256 ×${global.VaultCrypto.PBKDF2_ITERATIONS.toLocaleString()} · zero-knowledge`
             })
           ])
         );
@@ -1096,6 +1120,37 @@
     });
   }
 
+  // ====================================================== UPDATE AVAILABLE
+
+  /** Shown by Settings → "Check for updates" when a newer release exists. */
+  function openUpdateModal(info) {
+    openModal({
+      title: 'Update available',
+      content: (body) => {
+        body.appendChild(
+          el('p', { class: 'small', text: `OmniVault ${info.latest} is available — you are running v${info.current}.` })
+        );
+        body.appendChild(
+          el('p', {
+            class: 'small muted',
+            text: 'Grab the new APK from the release page and install it over this one. On Android the app can also update itself from the system menu (⋮ → Check for updates).'
+          })
+        );
+        body.appendChild(
+          el('a', {
+            href: info.url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            class: 'btn btn-primary',
+            style: { display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '4px' },
+            html: icon('external', 16) + '<span>Open release page</span>'
+          })
+        );
+      },
+      actions: [{ label: 'Later', class: 'btn-ghost' }]
+    });
+  }
+
   global.Views = {
     renderAuth,
     renderLock,
@@ -1109,6 +1164,7 @@
     showRecoveryCode,
     openResetModal,
     openExportModal,
+    openUpdateModal,
     TAB_LABELS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = global.Views;
