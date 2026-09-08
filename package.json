@@ -1,6 +1,6 @@
 {
   "name": "omnivault",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Zero-knowledge encrypted vault for passwords, notes and images. Web + Android (PWA), Docker-ready, zero npm dependencies.",
   "main": "server/server.js",
   "private": true,
@@ -8,7 +8,8 @@
     "start": "node server/server.js",
     "dev": "node --watch server/server.js",
     "test": "node --test --test-force-exit \"tests/*.test.js\"",
-    "check": "find server public tests -name '*.js' -print0 | xargs -0 -n1 node --check"
+    "check": "find server public tests -name '*.js' -print0 | xargs -0 -n1 node --check",
+    "lan": "node server/server.js --lan"
   },
   "engines": {
     "node": ">=18.17"

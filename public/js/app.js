@@ -31,9 +31,11 @@
     CLIPBOARD_CLEAR_MS: 25000,
 
     /** Web-app version — shown in Settings and compared with GitHub Releases. */
-    APP_VERSION: '1.0.2',
+    APP_VERSION: '1.0.3',
     /** Latest-release JSON used by "Check for updates" (Settings). */
     UPDATE_URL: 'https://api.github.com/repos/OmniNodeCo/OmniVault/releases/latest',
+    /** Automatic (silent) update checks happen at most this often. */
+    UPDATE_CHECK_INTERVAL_MS: 24 * 60 * 60 * 1000,
 
     state: {
       view: 'auth', // auth | lock | vault
@@ -70,6 +72,10 @@
       else if (tab === 'passwords') this.state.filter = 'password';
 
       await this.setMode(await this.detectMode());
+
+      // Silent daily update check (never on the APK origin — the native
+      // updater already covers that build).
+      this.maybeAutoCheckUpdates();
 
       const token = Session.getToken();
       if (token) {
@@ -167,23 +173,79 @@
 
     // ============================================================== updates
 
-    /**
-     * Compare the running version with the latest GitHub release. Contacts
-     * ONLY api.github.com (never the vault server) and only when asked.
-     */
-    async checkForUpdates() {
-      let release;
+    /** Fetch the latest-release JSON from GitHub. Throws when offline. */
+    async fetchLatestRelease() {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 8000);
         const res = await fetch(this.UPDATE_URL, {
           signal: ctrl.signal,
           cache: 'no-store',
           headers: { Accept: 'application/vnd.github+json' }
         });
-        clearTimeout(timer);
         if (!res.ok) throw new Error(`GitHub returned HTTP ${res.status}`);
-        release = await res.json();
+        return await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
+    /**
+     * Silent check on app start (at most once a day). Contacts ONLY
+     * api.github.com and never touches the vault server.
+     */
+    maybeAutoCheckUpdates() {
+      if (location.hostname === 'appassets.androidplatform.net') return; // APK has its own updater
+      if (!navigator.onLine) return;
+      let last = 0;
+      try {
+        last = Number(localStorage.getItem('ov_update_check_at')) || 0;
+      } catch (e) {
+        /* private mode */
+      }
+      if (Date.now() - last < this.UPDATE_CHECK_INTERVAL_MS) return;
+      try {
+        localStorage.setItem('ov_update_check_at', String(Date.now()));
+      } catch (e) {
+        /* ignore */
+      }
+      this.fetchLatestRelease()
+        .then((release) => {
+          const tag = String((release && release.tag_name) || '');
+          const latest = tag.startsWith('v') ? tag.slice(1) : tag;
+          if (!latest || compareVersions(latest, this.APP_VERSION) <= 0) return;
+          let dismissed = '';
+          try {
+            dismissed = localStorage.getItem('ov_update_dismissed') || '';
+          } catch (e) {
+            /* ignore */
+          }
+          if (dismissed === tag) return; // the user hid this version already
+          this.showUpdateBanner(tag, release);
+        })
+        .catch(() => {}); // silent — the manual check reports errors
+    },
+
+    /** Non-intrusive banner when a newer release exists. */
+    showUpdateBanner(tag, release) {
+      this._latestVersionSeen = tag;
+      this._latestReleaseInfo = {
+        current: this.APP_VERSION,
+        latest: tag,
+        url: String((release && release.html_url) || 'https://github.com/OmniNodeCo/OmniVault/releases/latest')
+      };
+      const banner = $('#update-banner');
+      if (!banner) return;
+      $('#update-banner-version').textContent = tag;
+      $('#update-banner-current').textContent = `v${this.APP_VERSION}`;
+      banner.hidden = false;
+    },
+
+    /** Manual check from Settings — always reports the outcome. */
+    async checkForUpdates() {
+      let release;
+      try {
+        release = await this.fetchLatestRelease();
       } catch (e) {
         toast('Could not check for updates — are you online?', 'error', 3200);
         return;
@@ -198,6 +260,7 @@
         toast(`OmniVault v${this.APP_VERSION} is up to date`, 'success', 3000);
         return;
       }
+      this.showUpdateBanner(tag, release);
       Views().openUpdateModal({
         current: this.APP_VERSION,
         latest: tag,
@@ -249,15 +312,32 @@
 
     bindChrome() {
       $('#brand-logo').innerHTML = icon('shield', 20);
+      $('#btn-health').innerHTML = icon('activity', 18);
       $('#btn-settings').innerHTML = icon('settings', 18);
       $('#btn-lock').innerHTML = icon('lock', 18);
       $('#search-icon').innerHTML = icon('search', 16);
       $('#offline-banner-icon').innerHTML = icon('offline', 15);
+      $('#update-banner-icon').innerHTML = icon('refresh', 15);
       $('#footnote-lock-icon').innerHTML = icon('lock', 13);
 
       $('#btn-settings').addEventListener('click', () => Views().openSettingsModal(this));
+      $('#btn-health').addEventListener('click', () => Views().openHealthModal(this));
       $('#btn-lock').addEventListener('click', () => this.lock('Vault locked'));
       $('#btn-add').addEventListener('click', () => Views().openItemModal(null, this.state.filter));
+
+      $('#update-banner-action').addEventListener('click', () => {
+        if (this._latestReleaseInfo) Views().openUpdateModal(this._latestReleaseInfo);
+      });
+      $('#update-banner-dismiss').addEventListener('click', () => {
+        $('#update-banner').hidden = true;
+        if (this._latestVersionSeen) {
+          try {
+            localStorage.setItem('ov_update_dismissed', this._latestVersionSeen);
+          } catch (e) {
+            /* private mode */
+          }
+        }
+      });
 
       $('#tabs').addEventListener('click', (e) => {
         const tab = e.target.closest('.tab');

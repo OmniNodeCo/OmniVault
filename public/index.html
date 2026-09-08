@@ -23,6 +23,13 @@
     <span>Offline — showing cached app. Vault changes need a connection.</span>
   </div>
 
+  <div id="update-banner" class="update-banner" hidden>
+    <span id="update-banner-icon"></span>
+    <span>Update available: <b id="update-banner-version"></b> — you have <span id="update-banner-current"></span>.</span>
+    <button id="update-banner-action" class="btn-link" type="button">See what's new</button>
+    <button id="update-banner-dismiss" class="banner-dismiss" type="button" title="Dismiss" aria-label="Dismiss update notice">×</button>
+  </div>
+
   <header id="topbar" class="topbar" hidden>
     <div class="topbar-row">
       <div class="brand" id="brand">
@@ -31,6 +38,7 @@
       </div>
       <div class="topbar-actions">
         <button id="btn-install" class="btn btn-ghost btn-sm" hidden>Install app</button>
+        <button id="btn-health" class="icon-btn" type="button" title="Vault health" aria-label="Vault health"></button>
         <button id="btn-settings" class="icon-btn" type="button" title="Settings" aria-label="Settings"></button>
         <button id="btn-lock" class="icon-btn" type="button" title="Lock vault" aria-label="Lock vault"></button>
       </div>

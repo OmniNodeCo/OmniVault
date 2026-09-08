@@ -23,6 +23,11 @@ and an encrypted backup format.
   decrypted only in your browser
 - 📵 **100% local mode** — no server at all: the whole vault (users, items,
   images) lives in your browser's IndexedDB, works offline, no network calls
+- ❤️ **Vault health** — one tap audits every password for weak, reused,
+  stale and missing entries, entirely on-device
+- 🔄 **Auto-update checks** — the app quietly compares its version with the
+  latest GitHub release (once a day) and the APK updates itself from the
+  system menu
 - 🔄 **Instant password change** — items are encrypted with a random vault key
   that is simply re-wrapped, never re-encrypted
 - 🔐 **Password reset** — a one-time **recovery code** lets you back in (and
@@ -49,6 +54,19 @@ cd OmniVault
 npm start          # → http://localhost:3000
 ```
 
+### Share with every device on your WiFi
+
+```bash
+npm run lan        # random port, HTTPS + QR code in the terminal
+```
+
+`--lan` (WiFi share mode) checks that the machine is actually connected to a
+network, picks a **free random port** each run, prints the LAN address and a
+**scannable QR code** so any phone/tablet on the same WiFi can open the
+vault, and serves **HTTPS** with a locally generated self-signed certificate
+(browsers need a secure context for WebCrypto — accept the one-time
+certificate warning). No network? It says so instead of sharing nothing.
+
 ### Docker
 
 ```bash
@@ -68,7 +86,8 @@ master password.
 
 > **HTTPS note:** client-side encryption (WebCrypto) and PWA install require a
 > secure context. `http://localhost` works for development. For LAN/remote
-> access, put Caddy/Traefik/nginx in front with TLS, or pass
+> access use `npm run lan` (self-signed HTTPS out of the box), put
+> Caddy/Traefik/nginx in front with TLS, or pass
 > `OMNIVAULT_TLS_CERT` / `OMNIVAULT_TLS_KEY` to serve HTTPS directly.
 
 ## 100% local mode (no server)

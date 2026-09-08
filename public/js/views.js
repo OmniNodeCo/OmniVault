@@ -1120,6 +1120,133 @@
     });
   }
 
+  // ========================================================== VAULT HEALTH
+
+  /**
+   * Analyse every password item: weak, reused, stale (>1 year) and missing
+   * passwords. 100% client-side — nothing leaves the decrypted session.
+   */
+  function healthReport(app) {
+    const passwords = app.state.items.filter((i) => i.type === 'password' && i.plain);
+    const weak = [];
+    const empty = [];
+    const stale = [];
+    const byPassword = new Map();
+    for (const item of passwords) {
+      const password = item.plain.password || '';
+      if (!password) {
+        empty.push(item);
+        continue;
+      }
+      if (global.VaultCrypto.passwordStrength(password) <= 1) weak.push(item);
+      const updated = new Date(item.updatedAt).getTime();
+      if (Number.isFinite(updated) && Date.now() - updated > 365 * 86400000) stale.push(item);
+      if (!byPassword.has(password)) byPassword.set(password, []);
+      byPassword.get(password).push(item);
+    }
+    const reused = Array.from(byPassword.values()).filter((group) => group.length > 1);
+    const flagged = new Set([...weak, ...empty, ...stale]);
+    for (const group of reused) for (const item of group) flagged.add(item);
+    const healthy = passwords.length - flagged.size;
+    return {
+      total: passwords.length,
+      weak,
+      reused,
+      stale,
+      empty,
+      healthy,
+      score: passwords.length ? Math.round((healthy / passwords.length) * 100) : null
+    };
+  }
+
+  function openHealthModal(app) {
+    const report = healthReport(app);
+    openModal({
+      title: 'Vault health',
+      wide: true,
+      content: (body, modalApi) => {
+        if (!report.total) {
+          body.appendChild(
+            el('div', { class: 'empty', style: { padding: '18px 0' } }, [
+              el('div', { class: 'empty-icon', html: icon('activity', 26) }),
+              el('h3', { text: 'Nothing to check yet' }),
+              el('p', { text: 'Add a few passwords and come back — this report checks them for weak, reused, stale and missing passwords, entirely on this device.' })
+            ])
+          );
+          return;
+        }
+
+        const grade =
+          report.score >= 90 ? ['Excellent', 'good'] :
+          report.score >= 70 ? ['Good', 'okay'] :
+          report.score >= 40 ? ['Could be better', 'warn'] :
+          ['Needs work', 'bad'];
+        const issues = report.total - report.healthy;
+
+        body.appendChild(
+          el('div', { class: 'stats' }, [
+            el('div', { class: 'stat' }, [
+              el('b', { text: `${report.score}%` }),
+              el('span', { text: `Health score · ${grade[0]}` })
+            ]),
+            el('div', { class: 'stat' }, [el('b', { text: String(report.total) }), el('span', { text: 'Passwords' })]),
+            el('div', { class: 'stat' }, [el('b', { text: String(issues) }), el('span', { text: issues === 1 ? 'Needs attention' : 'Need attention' })])
+          ])
+        );
+
+        if (!issues) {
+          body.appendChild(
+            el('div', { class: 'notice ok', style: { marginTop: '14px' }, html: icon('check', 15) }, [
+              el('span', { text: 'No weak, reused, stale or missing passwords. Keep it up!' })
+            ])
+          );
+          return;
+        }
+
+        const itemRow = (item) =>
+          el('button', {
+            class: 'health-item',
+            type: 'button',
+            onclick: () => {
+              modalApi.close();
+              app.openItemModal(item);
+            }
+          }, [
+            el('span', { class: 'health-item-title', text: item.title || 'Untitled' }),
+            el('span', { class: 'small muted', text: item.plain.username || item.plain.url || '' })
+          ]);
+
+        const section = (title, hint, children) =>
+          el('div', { class: 'settings-section' }, [
+            el('h4', { text: title }),
+            hint ? el('p', { class: 'small muted', style: { margin: '0 0 8px' }, text: hint }) : null,
+            el('div', { class: 'health-list' }, children)
+          ]);
+
+        if (report.weak.length) {
+          body.appendChild(section(`Weak passwords (${report.weak.length})`, 'Easy to guess — replace them with generated ones.', report.weak.map(itemRow)));
+        }
+        if (report.reused.length) {
+          body.appendChild(
+            section(`Reused passwords (${report.reused.length} groups)`, 'The same password on several sites — one leak opens them all.', report.reused.map((group) =>
+              el('div', { class: 'health-group' }, [
+                el('div', { class: 'small muted', text: `Used ${group.length}×` }),
+                el('div', { class: 'health-list' }, group.map(itemRow))
+              ])
+            ))
+          );
+        }
+        if (report.stale.length) {
+          body.appendChild(section(`Not updated in over a year (${report.stale.length})`, 'Old passwords deserve a refresh now and then.', report.stale.map(itemRow)));
+        }
+        if (report.empty.length) {
+          body.appendChild(section(`Missing passwords (${report.empty.length})`, 'These items have no password stored.', report.empty.map(itemRow)));
+        }
+      },
+      actions: [{ label: 'Done', class: 'btn-primary' }]
+    });
+  }
+
   // ====================================================== UPDATE AVAILABLE
 
   /** Shown by Settings → "Check for updates" when a newer release exists. */
@@ -1161,6 +1288,7 @@
     openSettingsModal,
     openChangePasswordModal,
     openWipeModal,
+    openHealthModal,
     showRecoveryCode,
     openResetModal,
     openExportModal,
