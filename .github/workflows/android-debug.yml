@@ -78,13 +78,12 @@ jobs:
             exit 1
           fi
 
-      - name: Commit failure log (auto-removed when green)
+      - name: Report failure lines as annotations
         if: failure()
         run: |
-          set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp /tmp/diag.log android-build-error.log
-          git add android-build-error.log
-          git commit -m "ci: android build failure log (diagnostics)" || true
-          git push
+          LOG=/tmp/diag.log
+          [ -f "$LOG" ] || exit 0
+          grep -E "error:|error |\.java:[0-9]+|FAILURE|Execution failed|Caused by|Lint found" "$LOG" | head -8 | while IFS= read -r line; do
+            echo "::error::${line:0:900}"
+          done
+          exit 0
