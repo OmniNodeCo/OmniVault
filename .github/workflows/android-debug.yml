@@ -1,0 +1,90 @@
+name: Android build diagnostics
+
+# TEMPORARY helper: builds the Android app on pushes to the working branch
+# and, when the build fails, commits the compile log back to the branch so
+# the error is readable without downloading artifacts. Remove once the
+# build is green again.
+
+on:
+  push:
+    branches: ['arena/**']
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-debug.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Android build diagnostics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Install Android SDK pieces (if missing)
+        run: |
+          set -e
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_ROOT/cmdline-tools/bin/sdkmanager" \
+            "$SDK_ROOT/tools/bin/sdkmanager"; do
+            if [ -x "$candidate" ]; then SDKMANAGER="$candidate"; break; fi
+          done
+          if [ -z "$SDKMANAGER" ] && command -v sdkmanager >/dev/null 2>&1; then
+            SDKMANAGER="sdkmanager"
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found — relying on the preinstalled SDK"
+            exit 0
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+      - name: Build debug APK (log captured)
+        run: |
+          set +e
+          gradle -p android assembleDebug --no-daemon > /tmp/debug.log 2>&1
+          status=$?
+          echo "=== assembleDebug exit: $status ==="
+          grep -E "error:|error |FAILURE|\.java:[0-9]+|BUILD " /tmp/debug.log | head -60 || true
+          if [ $status -ne 0 ]; then
+            { echo "gradle assembleDebug exit: $status"; echo; tail -n 250 /tmp/debug.log; } > /tmp/diag.log
+            exit 1
+          fi
+
+      - name: Build release APK + lint (log captured)
+        run: |
+          set +e
+          gradle -p android assembleRelease --no-daemon > /tmp/release.log 2>&1
+          status=$?
+          echo "=== assembleRelease exit: $status ==="
+          grep -E "error:|error |FAILURE|\.java:[0-9]+|Lint found|BUILD " /tmp/release.log | head -60 || true
+          if [ $status -ne 0 ]; then
+            { echo "gradle assembleRelease exit: $status"; echo; tail -n 250 /tmp/release.log; } > /tmp/diag.log
+            exit 1
+          fi
+
+      - name: Commit failure log (auto-removed when green)
+        if: failure()
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp /tmp/diag.log android-build-error.log
+          git add android-build-error.log
+          git commit -m "ci: android build failure log (diagnostics)" || true
+          git push
