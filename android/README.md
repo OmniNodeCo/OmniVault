@@ -70,10 +70,10 @@ The app checks for updates itself — no Play Store needed:
 
 - On launch (at most once every 24 h) it fetches the repo's GitHub
   **Releases → latest** JSON and compares the version with the installed one.
-- If a newer release with an `.apk` asset exists, a dialog offers to
-  **download the update** via the system Download Manager; tapping the
-  completed notification installs it over the existing app (vault data is
-  kept, provided the APK is signed with the same key).
+- If a newer release exists, a dialog offers a **Go to release** button that
+  opens the release page in the system browser — download the APK there and
+  install it over the existing app (vault data is kept, provided the APK is
+  signed with the same key).
 - **Menu → Check for updates** triggers the check manually.
 - The update source defaults to this repository's releases and can be
   changed or disabled at build time:
@@ -148,8 +148,8 @@ straight from the vault.
   `10.0.2.2`/`localhost` cleartext for emulator debugging).
 - Handles the WebView file chooser (image uploads), back navigation, state
   restore on rotation, and an offline screen with retry (server mode only).
-- Checks GitHub Releases for newer APKs (daily + on demand) and downloads
-  them with the system Download Manager — zero dependencies.
+- Checks GitHub Releases for newer versions (daily + on demand) and opens
+  the release page in the browser — zero dependencies.
 
 ## Requirements
 

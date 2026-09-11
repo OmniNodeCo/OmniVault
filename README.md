@@ -26,8 +26,8 @@ and an encrypted backup format.
 - ❤️ **Vault health** — one tap audits every password for weak, reused,
   stale and missing entries, entirely on-device
 - 🔄 **Auto-update checks** — the app quietly compares its version with the
-  latest GitHub release (once a day) and the APK updates itself from the
-  system menu
+  latest GitHub release (once a day); the one-tap **Go to release** button
+  opens the release page in your browser
 - 🔄 **Instant password change** — items are encrypted with a random vault key
   that is simply re-wrapped, never re-encrypted
 - 🔐 **Password reset** — a one-time **recovery code** lets you back in (and

@@ -1297,8 +1297,8 @@
 
   // ====================================================== UPDATE AVAILABLE
 
-  /** Shown by Settings → "Check for updates" when a newer release exists. */
-  function openUpdateModal(info) {
+  /** Shown when a newer release exists — "Go to release" opens the browser. */
+  function openUpdateModal(app, info) {
     openModal({
       title: 'Update available',
       content: (body) => {
@@ -1308,21 +1308,23 @@
         body.appendChild(
           el('p', {
             class: 'small muted',
-            text: 'Grab the new APK from the release page and install it over this one. On Android the app can also update itself from the system menu (⋮ → Check for updates).'
-          })
-        );
-        body.appendChild(
-          el('a', {
-            href: info.url,
-            target: '_blank',
-            rel: 'noopener noreferrer',
-            class: 'btn btn-primary',
-            style: { display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '4px' },
-            html: icon('external', 16) + '<span>Open release page</span>'
+            text: 'The release page opens in your browser, where you can read the changes and download the new version.'
           })
         );
       },
-      actions: [{ label: 'Later', class: 'btn-ghost' }]
+      actions: [
+        {
+          label: 'Go to release',
+          class: 'btn-primary',
+          icon: 'external',
+          closeOnClick: false,
+          onClick: () => {
+            app.openExternal(info.url);
+            return false;
+          }
+        },
+        { label: 'Later', class: 'btn-ghost' }
+      ]
     });
   }
 

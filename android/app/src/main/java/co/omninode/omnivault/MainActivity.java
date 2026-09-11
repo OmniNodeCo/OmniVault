@@ -3,7 +3,6 @@ package co.omninode.omnivault;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -11,7 +10,6 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Menu;
@@ -30,7 +28,6 @@ import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -58,8 +55,9 @@ import java.util.Collections;
  *
  * In-app updates: the app checks the GitHub Releases "latest" endpoint (see
  * the updateUrl property in build.gradle) once a day and on demand from the
- * menu; newer APKs are downloaded with the system Download Manager. Disable
- * at build time with -PupdateUrl= (empty).
+ * menu; a newer version offers a "Go to release" button that opens the
+ * release page in the system browser. Disable at build time with
+ * -PupdateUrl= (empty).
  */
 public class MainActivity extends Activity {
 
@@ -288,25 +286,15 @@ public class MainActivity extends Activity {
         }
         final Handler ui = new Handler(Looper.getMainLooper());
         new Thread(() -> {
-            String tag = null, apkUrl = null, pageUrl = null, error = null;
+            String tag = null, pageUrl = null, error = null;
             try {
                 JSONObject release = new JSONObject(httpGet(updateUrl));
                 tag = release.optString("tag_name", "");
                 pageUrl = release.optString("html_url", "");
-                JSONArray assets = release.optJSONArray("assets");
-                if (assets != null) {
-                    for (int i = 0; i < assets.length(); i++) {
-                        JSONObject asset = assets.getJSONObject(i);
-                        if (asset.optString("name", "").endsWith(".apk")) {
-                            apkUrl = asset.optString("browser_download_url", "");
-                            break;
-                        }
-                    }
-                }
             } catch (Exception e) {
                 error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             }
-            final String fTag = tag, fApk = apkUrl, fPage = pageUrl, fError = error;
+            final String fTag = tag, fPage = pageUrl, fError = error;
             ui.post(() -> {
                 getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                         .putLong(PREF_LAST_UPDATE_CHECK, System.currentTimeMillis())
@@ -321,44 +309,22 @@ public class MainActivity extends Activity {
                     if (manual) toast("OmniVault " + BuildConfig.VERSION_NAME + " is up to date");
                     return;
                 }
-                offerUpdate(fTag, fApk == null || fApk.isEmpty() ? null : fApk, fPage);
+                offerUpdate(fTag, fPage);
             });
         }, "omnivault-update-check").start();
     }
 
-    /** "Update available" dialog: download the APK or open the release page. */
-    private void offerUpdate(String tag, String apkUrl, String pageUrl) {
-        String message = "OmniVault " + tag + " is available. "
-                + (apkUrl != null ? "Download it now?" : "Open the release page to get it?");
+    /** "Update available" dialog — one tap opens the release page in the browser. */
+    private void offerUpdate(String tag, String pageUrl) {
+        final String url = pageUrl == null || pageUrl.isEmpty()
+                ? "https://github.com/OmniNodeCo/OmniVault/releases/latest"
+                : pageUrl;
         new AlertDialog.Builder(this)
                 .setTitle("Update available")
-                .setMessage(message)
-                .setPositiveButton(apkUrl != null ? "Download" : "Open", (dialog, which) -> {
-                    if (apkUrl != null) downloadUpdate(tag, apkUrl);
-                    else openInBrowser(pageUrl);
-                })
+                .setMessage("OmniVault " + tag + " is available. Open the release page in your browser?")
+                .setPositiveButton("Go to release", (dialog, which) -> openInBrowser(url))
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
-    }
-
-    /** Hands the APK to the system Download Manager (visible notification). */
-    private void downloadUpdate(String tag, String apkUrl) {
-        try {
-            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(apkUrl));
-            request.setTitle("OmniVault " + tag);
-            request.setDescription("Update APK");
-            request.setMimeType("application/vnd.android.package-archive");
-            request.setNotificationVisibility(
-                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            request.setDestinationInExternalPublicDir(
-                    Environment.DIRECTORY_DOWNLOADS, "OmniVault-" + tag + ".apk");
-            DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-            manager.enqueue(request);
-            toast("Downloading OmniVault " + tag + " — tap the notification to install");
-        } catch (Exception e) {
-            toast("Could not start the download — opening the release page instead");
-            openInBrowser("https://github.com/OmniNodeCo/OmniVault/releases/latest");
-        }
     }
 
     private void openInBrowser(String url) {

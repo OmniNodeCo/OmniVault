@@ -31,7 +31,7 @@
     CLIPBOARD_CLEAR_MS: 25000,
 
     /** Web-app version — shown in Settings and compared with GitHub Releases. */
-    APP_VERSION: '1.0.4',
+    APP_VERSION: '1.0.5',
     /** Latest-release JSON used by "Check for updates" (Settings). */
     UPDATE_URL: 'https://api.github.com/repos/OmniNodeCo/OmniVault/releases/latest',
     /** Automatic (silent) update checks happen at most this often. */
@@ -226,6 +226,22 @@
         .catch(() => {}); // silent — the manual check reports errors
     },
 
+    /**
+     * Open a link outside the vault: a new browser tab on the web/PWA, or
+     * the system browser when running inside the Android WebView (the
+     * wrapper intercepts external navigations and hands them to Android).
+     */
+    openExternal(url) {
+      if (!url) return;
+      try {
+        const win = window.open(url, '_blank', 'noopener');
+        if (win) return;
+      } catch (e) {
+        /* popup blocked — fall through */
+      }
+      location.href = url;
+    },
+
     /** Non-intrusive banner when a newer release exists. */
     showUpdateBanner(tag, release) {
       this._latestVersionSeen = tag;
@@ -261,7 +277,7 @@
         return;
       }
       this.showUpdateBanner(tag, release);
-      Views().openUpdateModal({
+      Views().openUpdateModal(this, {
         current: this.APP_VERSION,
         latest: tag,
         url: String((release && release.html_url) || 'https://github.com/OmniNodeCo/OmniVault/releases/latest')
@@ -328,7 +344,7 @@
       $('#btn-add').addEventListener('click', () => Views().openItemModal(null, this.state.filter));
 
       $('#update-banner-action').addEventListener('click', () => {
-        if (this._latestReleaseInfo) Views().openUpdateModal(this._latestReleaseInfo);
+        if (this._latestReleaseInfo) this.openExternal(this._latestReleaseInfo.url);
       });
       $('#update-banner-dismiss').addEventListener('click', () => {
         $('#update-banner').hidden = true;
