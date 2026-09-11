@@ -2,7 +2,6 @@ package co.omninode.omnivault;
 
 import android.app.assist.AssistStructure;
 import android.os.CancellationSignal;
-import android.service.autofill.AutofillService;
 import android.service.autofill.Dataset;
 import android.service.autofill.FillCallback;
 import android.service.autofill.FillContext;
@@ -28,7 +27,7 @@ import java.util.List;
  * wiped on lock/logout. Enable once under system Settings → Passwords &
  * autofill → OmniVault.
  */
-public class AutofillService extends AutofillService {
+public class AutofillService extends android.service.autofill.AutofillService {
 
     private static final int MAX_DATASETS = 5;
 
@@ -134,12 +133,11 @@ public class AutofillService extends AutofillService {
             presentation.setTextViewText(R.id.autofill_subtitle, "OmniVault");
 
             Dataset.Builder builder = new Dataset.Builder();
-            builder.setPresentation(presentation);
             if (fields.username != null && !username.isEmpty()) {
-                builder.setValue(fields.username, AutofillValue.forText(username));
+                builder.setValue(fields.username, AutofillValue.forText(username), presentation);
             }
             if (fields.password != null) {
-                builder.setValue(fields.password, AutofillValue.forText(password));
+                builder.setValue(fields.password, AutofillValue.forText(password), presentation);
             }
             return builder.build();
         } catch (Exception e) {

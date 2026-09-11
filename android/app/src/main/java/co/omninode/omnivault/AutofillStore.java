@@ -3,6 +3,7 @@ package co.omninode.omnivault;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
 import android.util.Base64;
 
 import java.nio.charset.StandardCharsets;
@@ -93,9 +94,9 @@ final class AutofillStore {
         generator.init(
                 new KeyGenParameterSpec.Builder(
                                 KEYSTORE_ALIAS,
-                                KeyGenParameterSpec.PURPOSE_ENCRYPT | KeyGenParameterSpec.PURPOSE_DECRYPT)
-                        .setBlockModes(KeyGenParameterSpec.BLOCK_MODE_GCM)
-                        .setEncryptionPaddings(KeyGenParameterSpec.ENCRYPTION_PADDING_NONE)
+                                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                         .setKeySize(256)
                         .build());
         return generator.generateKey();
