@@ -7,7 +7,7 @@
  * - /api/* is NEVER cached or intercepted — vault data always hits the network.
  */
 
-const VERSION = 'omnivault-v4';
+const VERSION = 'omnivault-v5';
 const PRECACHE = `${VERSION}-precache`;
 const RUNTIME = `${VERSION}-runtime`;
 

@@ -31,7 +31,7 @@
     CLIPBOARD_CLEAR_MS: 25000,
 
     /** Web-app version — shown in Settings and compared with GitHub Releases. */
-    APP_VERSION: '1.0.3',
+    APP_VERSION: '1.0.4',
     /** Latest-release JSON used by "Check for updates" (Settings). */
     UPDATE_URL: 'https://api.github.com/repos/OmniNodeCo/OmniVault/releases/latest',
     /** Automatic (silent) update checks happen at most this often. */
@@ -46,7 +46,7 @@
       items: [], // decrypted: { id, type, title, plain, createdAt, updatedAt }
       filter: 'password',
       search: '',
-      settings: { autolockMinutes: 5, theme: 'auto' }
+      settings: { autolockMinutes: 5, theme: 'auto', autofill: true, generator: null }
     },
 
     blobUrls: new Map(),
@@ -312,6 +312,7 @@
 
     bindChrome() {
       $('#brand-logo').innerHTML = icon('shield', 20);
+      $('#btn-generator').innerHTML = icon('zap', 18);
       $('#btn-health').innerHTML = icon('activity', 18);
       $('#btn-settings').innerHTML = icon('settings', 18);
       $('#btn-lock').innerHTML = icon('lock', 18);
@@ -321,6 +322,7 @@
       $('#footnote-lock-icon').innerHTML = icon('lock', 13);
 
       $('#btn-settings').addEventListener('click', () => Views().openSettingsModal(this));
+      $('#btn-generator').addEventListener('click', () => Views().openGeneratorModal(this));
       $('#btn-health').addEventListener('click', () => Views().openHealthModal(this));
       $('#btn-lock').addEventListener('click', () => this.lock('Vault locked'));
       $('#btn-add').addEventListener('click', () => Views().openItemModal(null, this.state.filter));
@@ -640,6 +642,7 @@
       this.state.itemKey = null;
       this.state.vaultKeyBytes = null;
       this.state.items = [];
+      this.clearAutofill();
       Session.setStoredVaultKey(null);
       this.state.search = '';
       const search = $('#search');
@@ -657,6 +660,7 @@
       this.clearLocalSession();
       this.revokeBlobUrls();
       this.state.items = [];
+      this.clearAutofill();
       this.show('auth');
       toast('Logged out', 'success', 1800);
     },
@@ -695,6 +699,7 @@
         }
       }
       this.state.items = items;
+      this.syncAutofill();
       if (broken) toast(`${broken} item(s) could not be decrypted with this key`, 'error', 5000);
     },
 
@@ -740,6 +745,7 @@
         }
         this.refreshTabState();
         this.renderVaultView();
+        this.syncAutofill();
       } catch (err) {
         if (err && err.status === 401) {
           this.clearLocalSession();
@@ -756,6 +762,7 @@
       if (idx !== -1) this.state.items.splice(idx, 1);
       this.refreshTabState();
       this.renderVaultView();
+      this.syncAutofill();
       toast('Deleted', 'success', 1800);
     },
 
@@ -902,6 +909,68 @@
       }
     },
 
+    // ================================================================ autofill
+
+    /** The Android JS bridge, or null on the web/PWA. */
+    autofillBridge() {
+      const bridge = global.OmniVaultAndroid;
+      return bridge && typeof bridge.setAutofillData === 'function' ? bridge : null;
+    },
+
+    /**
+     * Publish (or withdraw) the credential index for the native autofill
+     * service. Passwords leave the WebView only in the APK, only while the
+     * vault is unlocked, and are stored AES-GCM encrypted with a key in the
+     * Android Keystore. Lock/logout wipes the index.
+     */
+    syncAutofill() {
+      const bridge = this.autofillBridge();
+      if (!bridge) return;
+      const enabled = this.state.settings.autofill !== false;
+      try {
+        bridge.setAutofillEnabled(enabled);
+      } catch (e) {
+        /* bridge error */
+      }
+      if (!enabled) return;
+      const entries = this.state.items
+        .filter((item) => item.type === 'password' && item.plain)
+        .map((item) => {
+          const hosts = [];
+          const url = item.plain.url || '';
+          if (url) {
+            try {
+              const parsed = new URL(url.includes('://') ? url : `https://${url}`);
+              if (parsed.hostname) hosts.push(parsed.hostname.toLowerCase());
+            } catch (e) {
+              /* not a URL */
+            }
+          }
+          return {
+            title: item.title || '',
+            username: item.plain.username || '',
+            password: item.plain.password || '',
+            hosts
+          };
+        });
+      try {
+        bridge.setAutofillData(JSON.stringify(entries));
+      } catch (e) {
+        /* bridge error */
+      }
+    },
+
+    /** Wipe the native autofill index (lock / logout). */
+    clearAutofill() {
+      const bridge = this.autofillBridge();
+      if (!bridge) return;
+      try {
+        bridge.setAutofillData('[]');
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
     // ====================================================== master password
 
     /**
@@ -1020,6 +1089,7 @@
       this.state.items = [];
       this.refreshTabState();
       this.renderVaultView();
+      this.syncAutofill();
       toast('Vault wiped — all items deleted', 'success', 3500);
     },
 

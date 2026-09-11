@@ -77,7 +77,8 @@
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
     user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-    activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'
+    activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/>'
   };
 
   function icon(name, size) {

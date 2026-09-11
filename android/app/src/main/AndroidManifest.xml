@@ -20,6 +20,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- System autofill provider: fills saved logins in Chrome and apps.
+             Enable under Settings → Passwords & autofill → OmniVault. -->
+        <service
+            android:name=".AutofillService"
+            android:label="OmniVault"
+            android:exported="true"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

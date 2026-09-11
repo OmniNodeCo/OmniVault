@@ -18,6 +18,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -181,6 +182,10 @@ public class MainActivity extends Activity {
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
+
+        // Expose autofill controls to the web app. Only the annotated
+        // methods below are reachable from JavaScript (safe on API 17+).
+        webView.addJavascriptInterface(new VaultBridge(getApplicationContext()), "OmniVaultAndroid");
 
         maybeCheckForUpdates();
 
@@ -403,6 +408,33 @@ public class MainActivity extends Activity {
 
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    // ---------------------------------------------------- autofill bridge
+
+    /**
+     * JavaScript interface for the bundled web app (window.OmniVaultAndroid).
+     * The web app publishes an encrypted credential index for the autofill
+     * service while the vault is unlocked; all methods run on a binder
+     * thread and touch only thread-safe storage.
+     */
+    private static class VaultBridge {
+        private final Context context;
+
+        VaultBridge(Context context) {
+            this.context = context;
+        }
+
+        @JavascriptInterface
+        public void setAutofillData(String json) {
+            if (json == null) return;
+            AutofillStore.save(context, json);
+        }
+
+        @JavascriptInterface
+        public void setAutofillEnabled(boolean enabled) {
+            AutofillStore.setEnabled(context, enabled);
+        }
     }
 
     // ------------------------------------------------------------------ misc

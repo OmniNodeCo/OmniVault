@@ -32,7 +32,13 @@ and an encrypted backup format.
   that is simply re-wrapped, never re-encrypted
 - 🔐 **Password reset** — a one-time **recovery code** lets you back in (and
   resets your master password) if you ever forget it — no data lost
-- 🎲 **Password generator** — unbiased (rejection-sampled) crypto randomness
+- 🎲 **Password generator** — one tap from the toolbar (⚡), remembers your
+  options, and saves the result straight into the vault; unbiased
+  (rejection-sampled) crypto randomness
+- 🧩 **Autofill (Android)** — the APK registers a system autofill service
+  (Android 8+): Chrome and other apps can fill saved logins; the credential
+  cache is Keystore-encrypted and wiped whenever the vault locks — toggle
+  it in Settings
 - 💾 **Encrypted backups** — portable JSON export/import with their own password
 - ⏱️ **Auto-lock** — configurable inactivity lock + clipboard auto-clear
 - 📱 **Android** — installable PWA (offline app shell) *and* a standalone

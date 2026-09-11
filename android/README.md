@@ -119,6 +119,24 @@ which key was used.
 
 Never commit keystores or passwords (`.gitignore` already excludes `*.keystore`).
 
+## Autofill (Android 8+)
+
+The APK registers a **system autofill service**. Enable it once on the
+device under *Settings → Passwords, passkeys & autofill → Preferred
+service → OmniVault*, and Chrome (plus most apps) can fill saved logins
+straight from the vault.
+
+- **Matching** — the site's domain is compared with the URLs of your
+  password items (`example.com` also matches `login.example.com`); items
+  saved without a URL are offered inside other apps.
+- **How data flows** — while the vault is unlocked, the web app publishes a
+  credential index (URL, username, password per item) into native storage,
+  encrypted with an AES key held in the **Android Keystore** (hardware-backed
+  where available). Locking or logging out wipes it; nothing is sent over
+  the network.
+- **Disable it** in the app: Settings → General → *Autofill (Android)*.
+  Turning it off also wipes the native cache immediately.
+
 ## What the wrapper does
 
 - Bundles and serves the web app offline (local vault by default), or loads

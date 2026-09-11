@@ -410,7 +410,7 @@
         eye.innerHTML = icon(show ? 'eyeOff' : 'eye', 16);
       });
       const gen = iconBtn('refresh', 'Generate password', () => {
-        openGeneratorModal((pw) => {
+        openGeneratorModal(app, (pw) => {
           passwordInput.value = pw;
           passwordInput.type = 'text';
         });
@@ -630,18 +630,32 @@
 
   // ==================================================== PASSWORD GENERATOR
 
-  function openGeneratorModal(onUse) {
+  function openGeneratorModal(app, onUse) {
+    const opts = Object.assign(
+      { length: 20, lower: true, upper: true, digits: true, symbols: true },
+      (app && app.state.settings.generator) || {}
+    );
     const output = el('input', { type: 'text', class: 'mono', readonly: true, style: { fontSize: '16px', textAlign: 'center', fontWeight: '700' } });
-    const lengthInput = el('input', { type: 'number', min: 8, max: 80, value: 20 });
+    const lengthInput = el('input', { type: 'number', min: 8, max: 80, value: opts.length });
     const checks = {};
     const gen = () => {
+      const length = Math.max(8, Math.min(80, Number(lengthInput.value) || 20));
       output.value = global.VaultCrypto.generatePassword({
-        length: Math.max(8, Math.min(80, Number(lengthInput.value) || 20)),
+        length,
         lower: checks.lower.checked,
         upper: checks.upper.checked,
         digits: checks.digits.checked,
         symbols: checks.symbols.checked
       });
+      if (app) {
+        app.setSetting('generator', {
+          length,
+          lower: checks.lower.checked,
+          upper: checks.upper.checked,
+          digits: checks.digits.checked,
+          symbols: checks.symbols.checked
+        });
+      }
     };
     const m = openModal({
       title: 'Password generator',
@@ -650,7 +664,7 @@
         body.appendChild(el('div', { class: 'field' }, [el('label', { text: `Length` }), lengthInput]));
         lengthInput.addEventListener('input', gen);
         const checkRow = el('div', { class: 'row wrap', style: { gap: '14px' } });
-        for (const [key, label, on] of [['lower', 'a-z', true], ['upper', 'A-Z', true], ['digits', '0-9', true], ['symbols', '!@#$', true]]) {
+        for (const [key, label, on] of [['lower', 'a-z', opts.lower], ['upper', 'A-Z', opts.upper], ['digits', '0-9', opts.digits], ['symbols', '!@#$', opts.symbols]]) {
           checks[key] = el('input', { type: 'checkbox', checked: on });
           checks[key].addEventListener('change', gen);
           checkRow.appendChild(el('label', { class: 'check' }, [checks[key], el('span', { text: label })]));
@@ -671,13 +685,26 @@
             return false;
           }
         },
-        {
-          label: 'Use password',
-          class: 'btn-primary',
-          onClick: async () => {
-            if (onUse) onUse(output.value);
-          }
-        }
+        onUse
+          ? {
+              label: 'Use password',
+              class: 'btn-primary',
+              onClick: async () => {
+                onUse(output.value);
+              }
+            }
+          : {
+              label: 'Save to vault',
+              class: 'btn-primary',
+              icon: 'save',
+              closeOnClick: false,
+              onClick: async () => {
+                const password = output.value;
+                m.close();
+                app.openItemModal(null, 'password', { password });
+                return false;
+              }
+            }
       ]
     });
     return m;
@@ -865,6 +892,16 @@
     lockSelect.value = String(s.autolockMinutes);
     lockSelect.addEventListener('change', () => app.setSetting('autolockMinutes', Number(lockSelect.value)));
 
+    // Android APK only: the native autofill service (default on).
+    const autofillToggle = el('input', { type: 'checkbox' });
+    autofillToggle.checked = s.autofill !== false;
+    const autofillLabel = el('span', { text: autofillToggle.checked ? 'On' : 'Off' });
+    autofillToggle.addEventListener('change', () => {
+      app.setSetting('autofill', autofillToggle.checked);
+      autofillLabel.textContent = autofillToggle.checked ? 'On' : 'Off';
+      app.syncAutofill();
+    });
+
     const counts = { password: 0, note: 0, image: 0 };
     for (const it of app.state.items) counts[it.type] = (counts[it.type] || 0) + 1;
 
@@ -888,6 +925,17 @@
               ]),
               el('div', { class: 'control' }, [lockSelect])
             ]),
+            app.autofillBridge()
+              ? el('div', { class: 'settings-row' }, [
+                  el('div', { class: 'label' }, [
+                    el('span', { text: 'Autofill (Android)' }),
+                    el('small', { text: 'Fills saved logins in Chrome and apps — encrypted, wiped on lock' })
+                  ]),
+                  el('div', { class: 'control' }, [
+                    el('label', { class: 'check' }, [autofillToggle, autofillLabel])
+                  ])
+                ])
+              : null,
             el('div', { class: 'settings-row' }, [
               el('div', { class: 'label' }, [
                 el('span', { text: 'Storage' }),
