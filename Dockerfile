@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # OmniVault — zero-dependency Node server + static PWA frontend.
-FROM node:22-alpine
+FROM node:26-alpine
 
 ENV NODE_ENV=production \
     OMNIVAULT_DATA_DIR=/data \
