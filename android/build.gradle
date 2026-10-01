@@ -2,5 +2,5 @@
 // The app itself is the OmniVault PWA; this project packages it as an APK.
 
 plugins {
-    id 'com.android.application' version '8.5.2' apply false
+    id 'com.android.application' version '9.4.1' apply false
 }
